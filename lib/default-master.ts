@@ -1,0 +1,72 @@
+import type { Prisma, PrismaClient } from "@prisma/client";
+
+export const defaultMinistries = [
+  [0, "Keuangan"],
+  [1, "Kementerian SDM"],
+  [2, "Kementerian Ekonomi"],
+  [3, "Kementerian Pendidikan"],
+  [4, "Kementerian Sosial"],
+  [5, "KemenPorPar"],
+  [6, "Kementerian Luar Negeri"],
+  [7, "Kominfo"],
+  [8, "Kementerian Muslimah"],
+  [9, "Menkumham & Nilai"],
+  [98, "SDM LAMA"],
+  [96, "Yayasan"],
+] as const;
+
+export const defaultEvents = [
+  ["Bukber 2026", "Kementerian SDM", null],
+  ["SERTIJAB 26", "Keuangan", null],
+  ["UMROH MJ", "SDM LAMA", null],
+  ["Baksos", "Kementerian Sosial", null],
+  ["Santunan", "Kementerian Sosial", null],
+  ["Ngopbis", "Kementerian Pendidikan", null],
+  ["Training For Mentor", "Kementerian SDM", null],
+  ["Mabit Juara", "KemenPorPar", null],
+  ["CAMPING", "KemenPorPar", null],
+  ["Pembuatan ID CARD", "Kementerian SDM", null],
+  ["ID CARD MJ", "Kementerian SDM", null],
+  ["Infaq", "Kementerian Sosial", "Rutin"],
+  ["ID Card", "Kementerian SDM", null],
+] as const;
+
+export const defaultIncomeTypes = [
+  { eventName: "Bukber 2026", name: "Sponsor", uniqueCode: "121" },
+  { eventName: "Bukber 2026", name: "Pendaftaran", uniqueCode: "122" },
+] as const;
+
+type DbLike = PrismaClient | Prisma.TransactionClient;
+
+export async function seedDefaultMaster(db: DbLike) {
+  for (const [code, name] of defaultMinistries) {
+    await db.ministry.upsert({
+      where: { code },
+      update: { name, active: true },
+      create: { code, name },
+    });
+  }
+
+  const ministryRows = await db.ministry.findMany();
+  const ministryByName = new Map(ministryRows.map((row) => [row.name, row.id]));
+
+  for (const [name, ministryName, category] of defaultEvents) {
+    const ministryId = ministryByName.get(ministryName);
+    if (!ministryId) continue;
+    await db.event.upsert({
+      where: { ministryId_name: { ministryId, name } },
+      update: { category, active: true },
+      create: { name, category, ministryId },
+    });
+  }
+
+  for (const type of defaultIncomeTypes) {
+    const event = await db.event.findFirst({ where: { name: type.eventName } });
+    if (!event) continue;
+    await db.incomeType.upsert({
+      where: { eventId_name: { eventId: event.id, name: type.name } },
+      update: { uniqueCode: type.uniqueCode, active: true },
+      create: { eventId: event.id, name: type.name, uniqueCode: type.uniqueCode },
+    });
+  }
+}

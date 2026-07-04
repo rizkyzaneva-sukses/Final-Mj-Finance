@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, CalendarDays, CircleDollarSign, LoaderCircle, Plus } from "lucide-react";
+import { AlertTriangle, Building2, CalendarDays, CircleDollarSign, LoaderCircle, Plus, RotateCcw } from "lucide-react";
 
 type IncomeType = { id: string; name: string; uniqueCode: string | null; active: boolean; eventId: string };
 type Event = { id: string; name: string; category: string | null; active: boolean; ministryId: string; incomeTypes: IncomeType[] };
@@ -14,6 +14,9 @@ export function MasterManager({ ministries }: { ministries: Ministry[] }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState<Record<string, string>>({});
+  const [resetText, setResetText] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetMessage, setResetMessage] = useState<{ type: "ok" | "error"; text: string } | null>(null);
   const events = ministries.flatMap((ministry) => ministry.events.map((event) => ({ ...event, ministry })));
 
   async function submit(event: React.FormEvent) {
@@ -24,6 +27,26 @@ export function MasterManager({ ministries }: { ministries: Ministry[] }) {
     if (!response.ok) setError(payload.error || "Data gagal disimpan.");
     else { setForm({}); router.refresh(); }
     setLoading(false);
+  }
+
+  async function resetAllData() {
+    setResetLoading(true);
+    setResetMessage(null);
+    const response = await fetch("/api/master/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmation: resetText }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setResetMessage({ type: "error", text: payload.error || "Reset data gagal." });
+      setResetLoading(false);
+      return;
+    }
+    setResetText("");
+    setResetMessage({ type: "ok", text: payload.message || "Semua data berhasil direset." });
+    router.refresh();
+    setResetLoading(false);
   }
 
   return <div className="master-layout">
@@ -41,6 +64,23 @@ export function MasterManager({ ministries }: { ministries: Ministry[] }) {
         {error && <div className="form-error">{error}</div>}
         <button className="button button-primary button-wide" disabled={loading}>{loading ? <LoaderCircle className="spin" /> : <Plus />} Tambahkan</button>
       </form>
+      <div className="reset-box">
+        <div className="reset-box-header">
+          <span className="reset-icon"><AlertTriangle size={16} /></span>
+          <div>
+            <strong>Reset semua data percobaan</strong>
+            <small>Transaksi, batch impor, event, jenis pemasukan, dan kementerian akan dibersihkan lalu master default dipasang lagi.</small>
+          </div>
+        </div>
+        <label>Ketik <b>RESET SEMUA DATA</b> untuk konfirmasi
+          <input value={resetText} onChange={(e) => setResetText(e.target.value)} placeholder="RESET SEMUA DATA" />
+        </label>
+        {resetMessage && <div className={resetMessage.type === "error" ? "form-error" : "form-success"}>{resetMessage.text}</div>}
+        <button className="button reset-button button-wide" disabled={resetLoading || resetText.trim().toUpperCase() !== "RESET SEMUA DATA"} onClick={resetAllData}>
+          {resetLoading ? <LoaderCircle className="spin" /> : <RotateCcw />}
+          Reset semua data
+        </button>
+      </div>
     </section>
     <section className="panel master-list-panel">
       <div className="panel-title"><div><span className="eyebrow">STRUKTUR AKTIF</span><h2>Kementerian → Event → Pemasukan</h2></div></div>
