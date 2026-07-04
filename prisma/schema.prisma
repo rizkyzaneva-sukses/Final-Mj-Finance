@@ -1,0 +1,123 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TransactionSource {
+  QRIS_XLSX
+  BANK_PDF
+  BANK_SCREENSHOT
+  MANUAL
+}
+
+enum TransactionDirection {
+  IN
+  OUT
+}
+
+enum TransactionStatus {
+  MATCHED
+  UNMATCHED
+  SKIPPED
+}
+
+enum ImportStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model Ministry {
+  id           String        @id @default(cuid())
+  code         Int           @unique
+  name         String
+  active       Boolean       @default(true)
+  events       Event[]
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Event {
+  id           String        @id @default(cuid())
+  name         String
+  category     String?
+  active       Boolean       @default(true)
+  ministryId   String
+  ministry     Ministry      @relation(fields: [ministryId], references: [id], onDelete: Restrict)
+  incomeTypes  IncomeType[]
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@unique([ministryId, name])
+  @@index([ministryId])
+}
+
+model IncomeType {
+  id           String        @id @default(cuid())
+  name         String
+  uniqueCode   String?       @unique
+  active       Boolean       @default(true)
+  eventId      String
+  event        Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@unique([eventId, name])
+  @@index([eventId])
+}
+
+model ImportBatch {
+  id            String            @id @default(cuid())
+  fileName      String
+  source        TransactionSource
+  status        ImportStatus      @default(PROCESSING)
+  totalRows     Int               @default(0)
+  importedRows  Int               @default(0)
+  duplicateRows Int               @default(0)
+  matchedRows   Int               @default(0)
+  unmatchedRows Int               @default(0)
+  skippedRows   Int               @default(0)
+  errorMessage  String?
+  transactions  Transaction[]
+  createdAt     DateTime          @default(now())
+  completedAt   DateTime?
+}
+
+model Transaction {
+  id              String               @id @default(cuid())
+  transactionDate DateTime
+  description     String
+  amount          Decimal              @db.Decimal(18, 2)
+  direction       TransactionDirection
+  source          TransactionSource
+  sourceReference String?
+  fingerprint     String               @unique
+  status          TransactionStatus    @default(UNMATCHED)
+  skipReason      String?
+  rawData         Json?
+  importBatchId   String?
+  importBatch     ImportBatch?         @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  ministryId      String?
+  ministry        Ministry?            @relation(fields: [ministryId], references: [id], onDelete: Restrict)
+  eventId         String?
+  event           Event?               @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  incomeTypeId    String?
+  incomeType      IncomeType?          @relation(fields: [incomeTypeId], references: [id], onDelete: Restrict)
+  assignedAt      DateTime?
+  assignedByRole  String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([transactionDate])
+  @@index([status])
+  @@index([ministryId])
+  @@index([eventId])
+  @@index([importBatchId])
+}

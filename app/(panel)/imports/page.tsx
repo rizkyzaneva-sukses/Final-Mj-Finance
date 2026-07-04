@@ -1,0 +1,29 @@
+import { CheckCircle2, Clock3, FileWarning } from "lucide-react";
+import { UploadPanel } from "@/components/upload-panel";
+import { PageHeading } from "@/components/page-heading";
+import { db } from "@/lib/db";
+import { dateId } from "@/lib/format";
+
+export const dynamic = "force-dynamic";
+
+export default async function ImportsPage() {
+  const batches = await db.importBatch.findMany({ orderBy: { createdAt: "desc" }, take: 12 });
+  return (
+    <div className="page-stack">
+      <PageHeading eyebrow="MASUKKAN DATA" title="Dua sumber, satu pembukuan." description="Unggah mutasi BCA dan laporan QRIS. Sistem akan membersihkan, mencocokkan, lalu menyiapkan sisanya untuk ditinjau." />
+      <UploadPanel />
+      <section className="panel">
+        <div className="panel-title"><div><span className="eyebrow">RIWAYAT</span><h2>Impor terakhir</h2></div></div>
+        {batches.length ? <div className="batch-list">{batches.map((batch) => <div className="batch-item" key={batch.id}>
+          <div className={`batch-status status-${batch.status.toLowerCase()}`}>{batch.status === "COMPLETED" ? <CheckCircle2 /> : batch.status === "FAILED" ? <FileWarning /> : <Clock3 />}</div>
+          <div className="batch-main"><strong>{batch.fileName}</strong><small>{dateId.format(batch.createdAt)} · {batch.source.replaceAll("_", " ")}</small>{batch.errorMessage && <span>{batch.errorMessage}</span>}</div>
+          <div className="batch-numbers"><b>{batch.importedRows}</b><small>masuk</small></div>
+          <div className="batch-numbers"><b>{batch.matchedRows}</b><small>cocok</small></div>
+          <div className="batch-numbers"><b>{batch.unmatchedRows}</b><small>tinjau</small></div>
+          <div className="batch-numbers"><b>{batch.skippedRows}</b><small>skip</small></div>
+          <div className="batch-numbers"><b>{batch.duplicateRows}</b><small>duplikat</small></div>
+        </div>)}</div> : <div className="empty-state"><span>+</span><p>Belum ada file yang diimpor.</p></div>}
+      </section>
+    </div>
+  );
+}

@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mudajuara
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: change-this-password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mudajuara"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://postgres:change-this-password@postgres:5432/mudajuara?schema=public
+      SESSION_SECRET: replace-with-at-least-32-random-characters
+      FINANCE_LOGIN_CODE: replace-finance-code
+      MINISTRY_LOGIN_CODE: replace-ministry-code
+      MIMO_BASE_URL: https://token-plan-cn.xiaomimimo.com/v1
+      MIMO_API_KEY: replace-mimo-api-key
+      MIMO_MODEL: MiMo-V2.5
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
