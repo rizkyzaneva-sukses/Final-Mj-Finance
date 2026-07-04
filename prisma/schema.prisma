@@ -27,6 +27,7 @@ enum TransactionStatus {
 
 enum ImportStatus {
   PROCESSING
+  REVIEW
   COMPLETED
   FAILED
 }
@@ -77,6 +78,8 @@ model ImportBatch {
   id            String            @id @default(cuid())
   fileName      String
   source        TransactionSource
+  accountHolder String?
+  accountNumber String?
   status        ImportStatus      @default(PROCESSING)
   totalRows     Int               @default(0)
   importedRows  Int               @default(0)
@@ -97,8 +100,11 @@ model Transaction {
   amount          Decimal              @db.Decimal(18, 2)
   direction       TransactionDirection
   source          TransactionSource
+  accountHolder   String?
+  accountNumber   String?
   sourceReference String?
   fingerprint     String               @unique
+  isDraft         Boolean              @default(false)
   status          TransactionStatus    @default(UNMATCHED)
   skipReason      String?
   rawData         Json?
@@ -117,6 +123,7 @@ model Transaction {
 
   @@index([transactionDate])
   @@index([status])
+  @@index([isDraft])
   @@index([ministryId])
   @@index([eventId])
   @@index([importBatchId])

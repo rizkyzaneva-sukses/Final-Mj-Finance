@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { importTransactions } from "@/lib/matching";
+import { stageImportTransactions } from "@/lib/matching";
 import { parseBankFile } from "@/lib/mimo";
 import { parseQrisWorkbook } from "@/lib/qris";
 
@@ -25,22 +25,28 @@ export async function POST(request: Request) {
 
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
-    const rows = kind === "QRIS" ? parseQrisWorkbook(buffer) : await parseBankFile(buffer, file.type || inferredMime);
-    const counts = await importTransactions(batch.id, rows);
+    const parsed = kind === "QRIS"
+      ? { accountHolder: null, accountNumber: null, transactions: parseQrisWorkbook(buffer) }
+      : await parseBankFile(buffer, file.type || inferredMime);
+    if (!parsed.transactions.length) {
+      throw new Error("Tidak ada transaksi yang berhasil dibaca dari file ini.");
+    }
+    const counts = await stageImportTransactions(batch.id, parsed.transactions);
     await db.importBatch.update({
       where: { id: batch.id },
       data: {
-        status: "COMPLETED",
-        totalRows: rows.length,
+        accountHolder: parsed.accountHolder,
+        accountNumber: parsed.accountNumber,
+        status: "REVIEW",
+        totalRows: parsed.transactions.length,
         importedRows: counts.imported,
         duplicateRows: counts.duplicate,
         matchedRows: counts.matched,
         unmatchedRows: counts.unmatched,
         skippedRows: counts.skipped,
-        completedAt: new Date(),
       },
     });
-    return NextResponse.json(counts);
+    return NextResponse.json({ batchId: batch.id, ...counts });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Kesalahan impor tidak dikenal.";
     await db.importBatch.update({ where: { id: batch.id }, data: { status: "FAILED", errorMessage: message.slice(0, 1000), completedAt: new Date() } });

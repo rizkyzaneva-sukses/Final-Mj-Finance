@@ -32,10 +32,9 @@ export function UploadPanel() {
     const payload = await response.json();
     if (!response.ok) setMessage({ type: "error", text: payload.error || "Impor gagal." });
     else {
-      setMessage({ type: "ok", text: `${payload.imported} transaksi masuk, ${payload.matched} cocok otomatis, ${payload.unmatched} perlu ditinjau.` });
       setFile(null);
       if (inputRef.current) inputRef.current.value = "";
-      router.refresh();
+      router.push(`/imports/${payload.batchId}`);
     }
     setLoading(false);
   }

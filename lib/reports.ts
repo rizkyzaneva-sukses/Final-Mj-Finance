@@ -6,7 +6,7 @@ export type EventReportRow = { event: string; ministry: string; incomeRows: { ty
 export async function getReportData(startDate: Date, endDate: Date) {
   const [transactions, ministries] = await Promise.all([
     db.transaction.findMany({
-      where: { status: "MATCHED", transactionDate: { gte: startDate, lte: endDate } },
+      where: { isDraft: false, status: "MATCHED", transactionDate: { gte: startDate, lte: endDate } },
       include: { ministry: true, event: true, incomeType: true },
       orderBy: { transactionDate: "asc" },
     }),

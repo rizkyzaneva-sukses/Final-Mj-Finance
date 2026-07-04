@@ -9,11 +9,11 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const { startDate, endDate } = periodBounds();
   const [income, expense, unmatched, recent, byMinistry] = await Promise.all([
-    db.transaction.aggregate({ where: { status: "MATCHED", direction: "IN", transactionDate: { gte: startDate, lte: endDate } }, _sum: { amount: true } }),
-    db.transaction.aggregate({ where: { status: "MATCHED", direction: "OUT", transactionDate: { gte: startDate, lte: endDate } }, _sum: { amount: true } }),
-    db.transaction.count({ where: { status: "UNMATCHED" } }),
-    db.transaction.findMany({ where: { status: { not: "SKIPPED" } }, orderBy: { transactionDate: "desc" }, take: 6, include: { event: true, ministry: true } }),
-    db.transaction.groupBy({ by: ["ministryId", "direction"], where: { status: "MATCHED", transactionDate: { gte: startDate, lte: endDate }, ministryId: { not: null } }, _sum: { amount: true } }),
+    db.transaction.aggregate({ where: { isDraft: false, status: "MATCHED", direction: "IN", transactionDate: { gte: startDate, lte: endDate } }, _sum: { amount: true } }),
+    db.transaction.aggregate({ where: { isDraft: false, status: "MATCHED", direction: "OUT", transactionDate: { gte: startDate, lte: endDate } }, _sum: { amount: true } }),
+    db.transaction.count({ where: { isDraft: false, status: "UNMATCHED" } }),
+    db.transaction.findMany({ where: { isDraft: false, status: { not: "SKIPPED" } }, orderBy: { transactionDate: "desc" }, take: 6, include: { event: true, ministry: true } }),
+    db.transaction.groupBy({ by: ["ministryId", "direction"], where: { isDraft: false, status: "MATCHED", transactionDate: { gte: startDate, lte: endDate }, ministryId: { not: null } }, _sum: { amount: true } }),
   ]);
   const incomeValue = Number(income._sum.amount || 0);
   const expenseValue = Number(expense._sum.amount || 0);

@@ -10,6 +10,8 @@ export type NormalizedTransaction = {
   amount: number;
   direction: TransactionDirection;
   source: TransactionSource;
+  accountHolder?: string | null;
+  accountNumber?: string | null;
   sourceReference?: string | null;
   rawData?: Prisma.InputJsonValue;
 };
@@ -17,6 +19,8 @@ export type NormalizedTransaction = {
 export function fingerprint(transaction: NormalizedTransaction) {
   const stable = [
     transaction.source,
+    transaction.accountNumber || "",
+    transaction.accountHolder?.trim().toUpperCase() || "",
     transaction.sourceReference || "",
     transaction.transactionDate.toISOString(),
     transaction.description.trim().toUpperCase(),
@@ -36,7 +40,7 @@ export function findIncomeMatch(amount: number, incomeTypes: MatchableIncomeType
     .find((type) => wholeAmount.endsWith(type.uniqueCode!));
 }
 
-export async function importTransactions(batchId: string, rows: NormalizedTransaction[]) {
+async function persistTransactions(batchId: string, rows: NormalizedTransaction[], isDraft: boolean) {
   const incomeTypes = await db.incomeType.findMany({
     where: { active: true, uniqueCode: { not: null } },
     include: { event: true },
@@ -60,6 +64,7 @@ export async function importTransactions(batchId: string, rows: NormalizedTransa
         ...row,
         fingerprint: hash,
         importBatchId: batchId,
+        isDraft,
         status,
         skipReason: isBatchQris ? "Gabungan pencairan QRIS, detail dihitung dari file QRIS." : null,
         ministryId: match?.event.ministryId,
@@ -76,4 +81,15 @@ export async function importTransactions(batchId: string, rows: NormalizedTransa
   }
 
   return counts;
+}
+
+export async function stageImportTransactions(batchId: string, rows: NormalizedTransaction[]) {
+  return persistTransactions(batchId, rows, true);
+}
+
+export async function finalizeImportBatch(batchId: string) {
+  return db.transaction.updateMany({
+    where: { importBatchId: batchId, isDraft: true },
+    data: { isDraft: false },
+  });
 }

@@ -12,6 +12,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
   const status = statuses.includes(params.status as (typeof statuses)[number]) ? params.status as (typeof statuses)[number] : "UNMATCHED";
   const transactions = await db.transaction.findMany({
     where: {
+      isDraft: false,
       status,
       ...(params.source ? { source: params.source as never } : {}),
       ...(params.q ? { description: { contains: params.q, mode: "insensitive" } } : {}),
@@ -33,7 +34,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
       },
     },
   });
-  const counts = await db.transaction.groupBy({ by: ["status"], _count: true });
+  const counts = await db.transaction.groupBy({ by: ["status"], where: { isDraft: false }, _count: true });
   const countMap = Object.fromEntries(counts.map((row) => [row.status, row._count]));
   const rows = transactions.map((row) => ({
     id: row.id,
@@ -47,6 +48,8 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
     event: row.event?.name || null,
     incomeType: row.incomeType?.name || null,
     skipReason: row.skipReason,
+    accountHolder: row.accountHolder,
+    accountNumber: row.accountNumber,
   }));
   const master = ministries.map((ministry) => ({ id: ministry.id, code: ministry.code, name: ministry.name, events: ministry.events.map((event) => ({ id: event.id, name: event.name, incomeTypes: event.incomeTypes.map((type) => ({ id: type.id, name: type.name, uniqueCode: type.uniqueCode })) })) }));
 

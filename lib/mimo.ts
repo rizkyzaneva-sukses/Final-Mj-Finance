@@ -1,7 +1,12 @@
+import { createRequire } from "node:module";
 import { z } from "zod";
 import type { NormalizedTransaction } from "@/lib/matching";
 
+const require = createRequire(import.meta.url);
+
 const parsedSchema = z.object({
+  accountHolder: z.string().trim().min(1).nullable().optional(),
+  accountNumber: z.string().trim().min(1).nullable().optional(),
   transactions: z.array(
     z.object({
       date: z.string(),
@@ -28,12 +33,23 @@ function envValue(name: string) {
 }
 
 async function pdfText(buffer: Buffer) {
-  const pdfParse = (await import("pdf-parse")).default;
+  const pdfParse = require("pdf-parse/lib/pdf-parse.js") as (input: Buffer) => Promise<{ text: string }>;
   const parsed = await pdfParse(buffer);
   return parsed.text;
 }
 
-export async function parseBankFile(buffer: Buffer, mimeType: string): Promise<NormalizedTransaction[]> {
+function cleanAccountNumber(value: string | null | undefined) {
+  const digits = String(value || "").replace(/\D/g, "");
+  return digits || null;
+}
+
+function extractPdfAccount(text: string) {
+  const holder = text.match(/Nama\s*:\s*([^\n\r]+)/i)?.[1]?.trim() || null;
+  const number = cleanAccountNumber(text.match(/Nomor Rekening\s*:\s*([^\n\r]+)/i)?.[1]);
+  return { accountHolder: holder, accountNumber: number };
+}
+
+export async function parseBankFile(buffer: Buffer, mimeType: string): Promise<{ accountHolder: string | null; accountNumber: string | null; transactions: NormalizedTransaction[] }> {
   const apiKey = envValue("MIMO_API_KEY");
   if (!apiKey) throw new Error("MIMO_API_KEY belum diatur di environment.");
   if (apiKey.startsWith("tp-")) {
@@ -49,12 +65,14 @@ export async function parseBankFile(buffer: Buffer, mimeType: string): Promise<N
     throw new Error("Impor screenshot memerlukan model mimo-v2.5 yang mendukung gambar.");
   }
 
-  const instruction = `Anda adalah parser mutasi rekening BCA Indonesia. Ekstrak setiap transaksi, jangan masukkan saldo awal/akhir. Kembalikan JSON murni berbentuk {"transactions":[{"date":"YYYY-MM-DD","description":"teks lengkap","amount":100000,"direction":"IN|OUT","reference":null}]}. Tanda (+), CR, atau kredit berarti IN; tanda (-), DB, atau debit berarti OUT. Nominal adalah angka rupiah tanpa pemisah. Pertahankan deskripsi TRF BATCH MYBB - PEMBAYARAN secara utuh.`;
+  const instruction = `Anda adalah parser mutasi rekening BCA Indonesia. Ekstrak nama pemilik rekening, nomor rekening, dan setiap transaksi tanpa saldo awal/akhir. Kembalikan JSON murni berbentuk {"accountHolder":"Nama Pemilik atau null","accountNumber":"Nomor rekening atau null","transactions":[{"date":"YYYY-MM-DD","description":"teks lengkap","amount":100000,"direction":"IN|OUT","reference":null}]}. Tanda (+), CR, atau kredit berarti IN; tanda (-), DB, atau debit berarti OUT. Nominal adalah angka rupiah tanpa pemisah. Pertahankan deskripsi TRF BATCH MYBB - PEMBAYARAN secara utuh.`;
   const content: Array<Record<string, unknown>> = [{ type: "text", text: instruction }];
+  let pdfAccount = { accountHolder: null as string | null, accountNumber: null as string | null };
 
   if (mimeType === "application/pdf") {
     const text = await pdfText(buffer);
     if (!text.trim()) throw new Error("PDF tidak memiliki teks yang dapat dibaca. Unggah screenshot halaman mutasi.");
+    pdfAccount = extractPdfAccount(text);
     content.push({ type: "text", text: `\nTEKS E-STATEMENT:\n${text.slice(0, 120_000)}` });
   } else {
     content.push({
@@ -86,14 +104,22 @@ export async function parseBankFile(buffer: Buffer, mimeType: string): Promise<N
   const text = payload?.choices?.[0]?.message?.content;
   if (typeof text !== "string") throw new Error("Respons MiMo tidak berisi hasil parser.");
   const parsed = parsedSchema.parse(JSON.parse(cleanJson(text)));
+  const accountHolder = pdfAccount.accountHolder || parsed.accountHolder?.trim() || null;
+  const accountNumber = pdfAccount.accountNumber || cleanAccountNumber(parsed.accountNumber);
 
-  return parsed.transactions.map((row) => ({
-    transactionDate: new Date(`${row.date}T12:00:00+07:00`),
-    description: row.description,
-    amount: row.amount,
-    direction: row.direction,
-    source: mimeType === "application/pdf" ? "BANK_PDF" : "BANK_SCREENSHOT",
-    sourceReference: row.reference,
-    rawData: JSON.parse(JSON.stringify(row)),
-  }));
+  return {
+    accountHolder,
+    accountNumber,
+    transactions: parsed.transactions.map((row) => ({
+      transactionDate: new Date(`${row.date}T12:00:00+07:00`),
+      description: row.description,
+      amount: row.amount,
+      direction: row.direction,
+      source: mimeType === "application/pdf" ? "BANK_PDF" : "BANK_SCREENSHOT",
+      accountHolder,
+      accountNumber,
+      sourceReference: row.reference,
+      rawData: JSON.parse(JSON.stringify({ ...row, accountHolder, accountNumber })),
+    })),
+  };
 }
