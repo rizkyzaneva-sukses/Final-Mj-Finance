@@ -18,6 +18,8 @@ export async function POST(request: Request) {
     const transactionResult = await tx.transaction.deleteMany();
     const importBatchResult = await tx.importBatch.deleteMany();
     const incomeTypeResult = await tx.incomeType.deleteMany();
+    const expenseTypeResult = await tx.expenseType.deleteMany();
+    const incomeMasterResult = await tx.incomeMaster.deleteMany();
     const eventResult = await tx.event.deleteMany();
     const ministryResult = await tx.ministry.deleteMany();
     await seedDefaultMaster(tx);
@@ -25,6 +27,8 @@ export async function POST(request: Request) {
       deletedTransactions: transactionResult.count,
       deletedImportBatches: importBatchResult.count,
       deletedIncomeTypes: incomeTypeResult.count,
+      deletedIncomeMasters: incomeMasterResult.count,
+      deletedExpenseTypes: expenseTypeResult.count,
       deletedEvents: eventResult.count,
       deletedMinistries: ministryResult.count,
     };

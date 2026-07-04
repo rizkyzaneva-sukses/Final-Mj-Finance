@@ -31,12 +31,26 @@ export async function POST(request: Request) {
       return NextResponse.json(row);
     }
     if (body.entity === "income") {
-      const name = String(body.name || "").trim();
       const eventId = String(body.eventId || "");
+      const incomeMasterId = String(body.incomeMasterId || "");
       const uniqueCode = String(body.uniqueCode || "").trim();
-      if (!name || !eventId || !/^(0|[1-9]\d*)$/.test(uniqueCode)) throw new Error("Event, nama, dan kode unik tanpa nol depan wajib diisi.");
+      if (!eventId || !incomeMasterId || !/^(0|[1-9]\d*)$/.test(uniqueCode)) throw new Error("Event, master pemasukan, dan kode unik tanpa nol depan wajib diisi.");
       if (uniqueCode.length > 8) throw new Error("Kode unik maksimal 8 digit.");
-      const row = await db.incomeType.create({ data: { name, eventId, uniqueCode } });
+      const incomeMaster = await db.incomeMaster.findUnique({ where: { id: incomeMasterId } });
+      if (!incomeMaster || !incomeMaster.active) throw new Error("Master pemasukan tidak valid.");
+      const row = await db.incomeType.create({ data: { name: incomeMaster.name, eventId, uniqueCode, incomeMasterId: incomeMaster.id } });
+      return NextResponse.json(row);
+    }
+    if (body.entity === "incomeMaster") {
+      const name = String(body.name || "").trim();
+      if (!name) throw new Error("Nama master pemasukan wajib diisi.");
+      const row = await db.incomeMaster.create({ data: { name } });
+      return NextResponse.json(row);
+    }
+    if (body.entity === "expenseType") {
+      const name = String(body.name || "").trim();
+      if (!name) throw new Error("Nama jenis pengeluaran wajib diisi.");
+      const row = await db.expenseType.create({ data: { name } });
       return NextResponse.json(row);
     }
     return NextResponse.json({ error: "Jenis master tidak dikenal." }, { status: 400 });
@@ -81,15 +95,32 @@ export async function PATCH(request: Request) {
 
     if (body.entity === "income") {
       const id = String(body.id || "");
-      const name = String(body.name || "").trim();
       const eventId = String(body.eventId || "");
+      const incomeMasterId = String(body.incomeMasterId || "");
       const uniqueCode = String(body.uniqueCode || "").trim();
-      if (!id || !name || !eventId || !/^(0|[1-9]\d*)$/.test(uniqueCode)) throw new Error("Event, nama, dan kode unik tanpa nol depan wajib diisi.");
+      if (!id || !eventId || !incomeMasterId || !/^(0|[1-9]\d*)$/.test(uniqueCode)) throw new Error("Event, master pemasukan, dan kode unik tanpa nol depan wajib diisi.");
       if (uniqueCode.length > 8) throw new Error("Kode unik maksimal 8 digit.");
+      const incomeMaster = await db.incomeMaster.findUnique({ where: { id: incomeMasterId } });
+      if (!incomeMaster || !incomeMaster.active) throw new Error("Master pemasukan tidak valid.");
       const row = await db.incomeType.update({
         where: { id },
-        data: { name, eventId, uniqueCode, active: body.active !== false },
+        data: { name: incomeMaster.name, eventId, uniqueCode, incomeMasterId: incomeMaster.id, active: body.active !== false },
       });
+      return NextResponse.json(row);
+    }
+    if (body.entity === "incomeMaster") {
+      const id = String(body.id || "");
+      const name = String(body.name || "").trim();
+      if (!id || !name) throw new Error("Nama master pemasukan wajib diisi.");
+      const row = await db.incomeMaster.update({ where: { id }, data: { name, active: body.active !== false } });
+      await db.incomeType.updateMany({ where: { incomeMasterId: id }, data: { name } });
+      return NextResponse.json(row);
+    }
+    if (body.entity === "expenseType") {
+      const id = String(body.id || "");
+      const name = String(body.name || "").trim();
+      if (!id || !name) throw new Error("Nama jenis pengeluaran wajib diisi.");
+      const row = await db.expenseType.update({ where: { id }, data: { name, active: body.active !== false } });
       return NextResponse.json(row);
     }
 
@@ -119,6 +150,20 @@ export async function DELETE(request: Request) {
       const linked = await db.transaction.count({ where: { incomeTypeId: id } });
       if (linked) return NextResponse.json({ error: "Jenis pemasukan ini sudah dipakai transaksi dan tidak bisa dihapus." }, { status: 409 });
       await db.incomeType.delete({ where: { id } });
+      return NextResponse.json({ ok: true });
+    }
+
+    if (entity === "incomeMaster") {
+      const linked = await db.incomeType.count({ where: { incomeMasterId: id } });
+      if (linked) return NextResponse.json({ error: "Master pemasukan ini masih dipakai mapping event dan tidak bisa dihapus." }, { status: 409 });
+      await db.incomeMaster.delete({ where: { id } });
+      return NextResponse.json({ ok: true });
+    }
+
+    if (entity === "expenseType") {
+      const linked = await db.transaction.count({ where: { expenseTypeId: id } });
+      if (linked) return NextResponse.json({ error: "Jenis pengeluaran ini sudah dipakai transaksi dan tidak bisa dihapus." }, { status: 409 });
+      await db.expenseType.delete({ where: { id } });
       return NextResponse.json({ ok: true });
     }
 

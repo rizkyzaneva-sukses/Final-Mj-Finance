@@ -9,15 +9,19 @@ export const dynamic = "force-dynamic";
 export default async function MasterPage() {
   const session = await getSession();
   if (session?.role !== "FINANCE") redirect("/dashboard");
-  const ministries = await db.ministry.findMany({
-    orderBy: { code: "asc" },
-    include: {
-      events: {
-        orderBy: { name: "asc" },
-        include: { incomeTypes: { orderBy: { name: "asc" } } },
+  const [ministries, incomeMasters, expenseTypes] = await Promise.all([
+    db.ministry.findMany({
+      orderBy: { code: "asc" },
+      include: {
+        events: {
+          orderBy: { name: "asc" },
+          include: { incomeTypes: { orderBy: { name: "asc" }, include: { incomeMaster: true } } },
+        },
       },
-    },
-  });
+    }),
+    db.incomeMaster.findMany({ orderBy: { name: "asc" } }),
+    db.expenseType.findMany({ orderBy: { name: "asc" } }),
+  ]);
   const data = ministries.map((ministry) => ({
     id: ministry.id,
     code: ministry.code,
@@ -33,10 +37,12 @@ export default async function MasterPage() {
         id: type.id,
         name: type.name,
         uniqueCode: type.uniqueCode,
+        incomeMasterId: type.incomeMasterId,
+        incomeMasterName: type.incomeMaster?.name || type.name,
         active: type.active,
         eventId: type.eventId,
       })),
     })),
   }));
-  return <div className="page-stack"><PageHeading eyebrow="KAMUS KEUANGAN" title="Atur kode, lalu biarkan sistem bekerja." description="Setiap jenis pemasukan memiliki kode akhir nominal yang unik. Kode kementerian tidak memakai nol di depan." /><MasterManager ministries={data} /></div>;
+  return <div className="page-stack"><PageHeading eyebrow="KAMUS KEUANGAN" title="Atur kode, lalu biarkan sistem bekerja." description="Setiap jenis pemasukan memiliki kode akhir nominal yang unik. Kode kementerian tidak memakai nol di depan." /><MasterManager ministries={data} incomeMasters={incomeMasters} expenseTypes={expenseTypes} /></div>;
 }

@@ -19,6 +19,10 @@ export type MasterTree = {
   id: string;
   code: number;
   name: string;
+  expenseTypes: {
+    id: string;
+    name: string;
+  }[];
   events: {
     id: string;
     name: string;
@@ -35,6 +39,7 @@ export function TransactionAssignmentModal({ target, master, onClose }: { target
   const [ministryId, setMinistryId] = useState("");
   const [eventId, setEventId] = useState("");
   const [incomeTypeId, setIncomeTypeId] = useState("");
+  const [expenseTypeId, setExpenseTypeId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const ministry = master.find((item) => item.id === ministryId);
@@ -45,7 +50,7 @@ export function TransactionAssignmentModal({ target, master, onClose }: { target
     setError("");
     const payload = target.direction === "IN"
       ? { action: "assign", incomeTypeId }
-      : { action: "assign", ministryId, eventId };
+      : { action: "assign", ministryId, eventId, expenseTypeId };
     const response = await fetch(isBulk ? "/api/transactions/bulk" : `/api/transactions/${target.ids[0]}`, {
       method: isBulk ? "POST" : "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -76,8 +81,9 @@ export function TransactionAssignmentModal({ target, master, onClose }: { target
     {target.direction === "IN" ? <label>Jenis pemasukan<select value={incomeTypeId} onChange={(e) => setIncomeTypeId(e.target.value)}><option value="">Pilih jenis pemasukan...</option>{master.flatMap((m) => m.events.flatMap((ev) => ev.incomeTypes.map((type) => <option key={type.id} value={type.id}>{m.code} · {m.name} / {ev.name} / {type.name} ({type.uniqueCode || "tanpa kode"})</option>)))}</select></label> : <>
       <label>Kementerian<select value={ministryId} onChange={(e) => { setMinistryId(e.target.value); setEventId(""); }}><option value="">Pilih kementerian...</option>{master.map((item) => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}</select></label>
       <label>Event<select value={eventId} onChange={(e) => setEventId(e.target.value)} disabled={!ministry}><option value="">Pilih event...</option>{ministry?.events.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <label>Jenis pengeluaran<select value={expenseTypeId} onChange={(e) => setExpenseTypeId(e.target.value)}><option value="">Pilih jenis pengeluaran...</option>{master[0]?.expenseTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
     </>}
     {error && <div className="form-error">{error}</div>}
-    <button className="button button-primary button-wide" disabled={loading || (target.direction === "IN" ? !incomeTypeId : !ministryId || !eventId)} onClick={save}>{loading ? <LoaderCircle className="spin" /> : <Check />}{isBulk ? ` Terapkan ke ${target.ids.length} transaksi` : " Simpan assignment"}</button>
+    <button className="button button-primary button-wide" disabled={loading || (target.direction === "IN" ? !incomeTypeId : !ministryId || !eventId || !expenseTypeId)} onClick={save}>{loading ? <LoaderCircle className="spin" /> : <Check />}{isBulk ? ` Terapkan ke ${target.ids.length} transaksi` : " Simpan assignment"}</button>
   </div></div>;
 }

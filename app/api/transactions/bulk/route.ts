@@ -8,6 +8,7 @@ type BulkBody = {
   ministryId?: string;
   eventId?: string;
   incomeTypeId?: string;
+  expenseTypeId?: string;
 };
 
 export async function POST(request: Request) {
@@ -30,6 +31,7 @@ export async function POST(request: Request) {
         ministryId: null,
         eventId: null,
         incomeTypeId: null,
+        expenseTypeId: null,
         assignedAt: null,
         assignedByRole: session.role,
       },
@@ -65,6 +67,7 @@ export async function POST(request: Request) {
         ministryId: type.event.ministryId,
         eventId: type.eventId,
         incomeTypeId: type.id,
+        expenseTypeId: null,
         skipReason: null,
         assignedAt: new Date(),
         assignedByRole: session.role,
@@ -77,6 +80,10 @@ export async function POST(request: Request) {
   if (!event || event.ministryId !== body.ministryId) {
     return NextResponse.json({ error: "Event tidak sesuai dengan kementerian." }, { status: 400 });
   }
+  const expenseType = await db.expenseType.findUnique({ where: { id: String(body.expenseTypeId || "") } });
+  if (!expenseType || !expenseType.active) {
+    return NextResponse.json({ error: "Jenis pengeluaran tidak valid." }, { status: 400 });
+  }
   await db.transaction.updateMany({
     where: { id: { in: ids } },
     data: {
@@ -84,6 +91,7 @@ export async function POST(request: Request) {
       ministryId: event.ministryId,
       eventId: event.id,
       incomeTypeId: null,
+      expenseTypeId: expenseType.id,
       skipReason: null,
       assignedAt: new Date(),
       assignedByRole: session.role,

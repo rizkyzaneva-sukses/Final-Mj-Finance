@@ -32,13 +32,52 @@ export const defaultEvents = [
 ] as const;
 
 export const defaultIncomeTypes = [
-  { eventName: "Bukber 2026", name: "Sponsor", uniqueCode: "121" },
+  { eventName: "Bukber 2026", name: "Sponsorship", uniqueCode: "121" },
   { eventName: "Bukber 2026", name: "Pendaftaran", uniqueCode: "122" },
+] as const;
+
+export const defaultIncomeMasters = [
+  "Sponsorship",
+  "Pendaftaran",
+  "Infaq Event",
+  "Penjualan tiket",
+  "Kerja sama program",
+  "Infaq Rutinan",
+  "Infaq Program",
+] as const;
+
+export const defaultExpenseTypes = [
+  "Honor narasumber",
+  "Honor panitia",
+  "Biaya admin bank",
+  "Biaya transfer",
+  "Santunan",
+  "Transport & Ongkir",
+  "Akomodasi",
+  "Iklan/promosi",
+  "Sewa tempat",
+  "Konsumsi",
 ] as const;
 
 type DbLike = PrismaClient | Prisma.TransactionClient;
 
 export async function seedDefaultMaster(db: DbLike) {
+  for (const name of defaultIncomeMasters) {
+    await db.incomeMaster.upsert({
+      where: { name },
+      update: { active: true },
+      create: { name },
+    });
+  }
+
+  for (const name of defaultExpenseTypes) {
+    await db.expenseType.upsert({
+      where: { name },
+      update: { active: true },
+      create: { name },
+    });
+  }
+
   for (const [code, name] of defaultMinistries) {
     await db.ministry.upsert({
       where: { code },
@@ -62,11 +101,12 @@ export async function seedDefaultMaster(db: DbLike) {
 
   for (const type of defaultIncomeTypes) {
     const event = await db.event.findFirst({ where: { name: type.eventName } });
+    const incomeMaster = await db.incomeMaster.findUnique({ where: { name: type.name } });
     if (!event) continue;
     await db.incomeType.upsert({
       where: { eventId_name: { eventId: event.id, name: type.name } },
-      update: { uniqueCode: type.uniqueCode, active: true },
-      create: { eventId: event.id, name: type.name, uniqueCode: type.uniqueCode },
+      update: { uniqueCode: type.uniqueCode, active: true, incomeMasterId: incomeMaster?.id || null },
+      create: { eventId: event.id, name: type.name, uniqueCode: type.uniqueCode, incomeMasterId: incomeMaster?.id || null },
     });
   }
 }

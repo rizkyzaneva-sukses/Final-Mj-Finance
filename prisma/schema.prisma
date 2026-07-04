@@ -65,13 +65,34 @@ model IncomeType {
   uniqueCode   String?       @unique
   active       Boolean       @default(true)
   eventId      String
+  incomeMasterId String?
   event        Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  incomeMaster IncomeMaster? @relation(fields: [incomeMasterId], references: [id], onDelete: SetNull)
   transactions Transaction[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
   @@unique([eventId, name])
   @@index([eventId])
+  @@index([incomeMasterId])
+}
+
+model IncomeMaster {
+  id         String       @id @default(cuid())
+  name       String       @unique
+  active     Boolean      @default(true)
+  mappings   IncomeType[]
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+}
+
+model ExpenseType {
+  id           String        @id @default(cuid())
+  name         String        @unique
+  active       Boolean       @default(true)
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 }
 
 model ImportBatch {
@@ -116,6 +137,8 @@ model Transaction {
   event           Event?               @relation(fields: [eventId], references: [id], onDelete: Restrict)
   incomeTypeId    String?
   incomeType      IncomeType?          @relation(fields: [incomeTypeId], references: [id], onDelete: Restrict)
+  expenseTypeId   String?
+  expenseType     ExpenseType?         @relation(fields: [expenseTypeId], references: [id], onDelete: Restrict)
   assignedAt      DateTime?
   assignedByRole  String?
   createdAt       DateTime             @default(now())
@@ -126,5 +149,6 @@ model Transaction {
   @@index([isDraft])
   @@index([ministryId])
   @@index([eventId])
+  @@index([expenseTypeId])
   @@index([importBatchId])
 }

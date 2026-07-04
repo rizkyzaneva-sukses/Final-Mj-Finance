@@ -15,7 +15,7 @@ export default async function ImportBatchPage({ params }: { params: Params }) {
       transactions: {
         where: { isDraft: true },
         orderBy: [{ transactionDate: "asc" }, { createdAt: "asc" }],
-        include: { ministry: true, event: true, incomeType: true },
+        include: { ministry: true, event: true, incomeType: true, expenseType: true },
       },
     },
   });
@@ -34,6 +34,7 @@ export default async function ImportBatchPage({ params }: { params: Params }) {
       },
     },
   });
+  const expenseTypes = await db.expenseType.findMany({ where: { active: true }, orderBy: { name: "asc" } });
 
   const rows = batch.transactions.map((row) => ({
     id: row.id,
@@ -46,6 +47,7 @@ export default async function ImportBatchPage({ params }: { params: Params }) {
     ministry: row.ministry?.name || null,
     event: row.event?.name || null,
     incomeType: row.incomeType?.name || null,
+    expenseType: row.expenseType?.name || null,
     skipReason: row.skipReason,
     accountHolder: row.accountHolder,
     accountNumber: row.accountNumber,
@@ -55,6 +57,7 @@ export default async function ImportBatchPage({ params }: { params: Params }) {
     id: ministry.id,
     code: ministry.code,
     name: ministry.name,
+    expenseTypes: expenseTypes.map((item) => ({ id: item.id, name: item.name })),
     events: ministry.events.map((event) => ({
       id: event.id,
       name: event.name,

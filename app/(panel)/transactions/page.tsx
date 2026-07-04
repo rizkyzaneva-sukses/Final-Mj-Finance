@@ -19,7 +19,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
     },
     orderBy: [{ transactionDate: "desc" }, { createdAt: "desc" }],
     take: 150,
-    include: { ministry: true, event: true, incomeType: true },
+    include: { ministry: true, event: true, incomeType: true, expenseType: true },
   });
   const ministries = await db.ministry.findMany({
     where: { active: true },
@@ -34,6 +34,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
       },
     },
   });
+  const expenseTypes = await db.expenseType.findMany({ where: { active: true }, orderBy: { name: "asc" } });
   const counts = await db.transaction.groupBy({ by: ["status"], where: { isDraft: false }, _count: true });
   const countMap = Object.fromEntries(counts.map((row) => [row.status, row._count]));
   const rows = transactions.map((row) => ({
@@ -47,11 +48,12 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
     ministry: row.ministry?.name || null,
     event: row.event?.name || null,
     incomeType: row.incomeType?.name || null,
+    expenseType: row.expenseType?.name || null,
     skipReason: row.skipReason,
     accountHolder: row.accountHolder,
     accountNumber: row.accountNumber,
   }));
-  const master = ministries.map((ministry) => ({ id: ministry.id, code: ministry.code, name: ministry.name, events: ministry.events.map((event) => ({ id: event.id, name: event.name, incomeTypes: event.incomeTypes.map((type) => ({ id: type.id, name: type.name, uniqueCode: type.uniqueCode })) })) }));
+  const master = ministries.map((ministry) => ({ id: ministry.id, code: ministry.code, name: ministry.name, expenseTypes: expenseTypes.map((item) => ({ id: item.id, name: item.name })), events: ministry.events.map((event) => ({ id: event.id, name: event.name, incomeTypes: event.incomeTypes.map((type) => ({ id: type.id, name: type.name, uniqueCode: type.uniqueCode })) })) }));
 
   return (
     <div className="page-stack">

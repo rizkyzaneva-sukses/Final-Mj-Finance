@@ -17,6 +17,7 @@ type Row = {
   ministry: string | null;
   event: string | null;
   incomeType: string | null;
+  expenseType: string | null;
   skipReason: string | null;
   accountHolder: string | null;
   accountNumber: string | null;
@@ -156,7 +157,7 @@ export function ImportPreview({ batch, rows, master }: { batch: Batch; rows: Row
           <td className="description-cell">{row.description}{row.skipReason && <small>{row.skipReason}</small>}</td>
           <td><span className={`direction-pill ${row.direction === "IN" ? "pill-in" : "pill-out"}`}>{row.direction === "IN" ? "Masuk" : "Keluar"}</span></td>
           <td className={row.direction === "IN" ? "money-in" : "money-out"}><strong>{rupiah.format(row.amount)}</strong></td>
-          <td>{row.event ? <div className="assignment-summary"><strong>{row.event}</strong><small>{row.ministry}{row.incomeType ? ` · ${row.incomeType}` : ""}</small></div> : <span className="muted">Belum di-assign</span>}</td>
+          <td>{row.event ? <div className="assignment-summary"><strong>{row.event}</strong><small>{row.ministry}{row.incomeType ? ` · ${row.incomeType}` : row.expenseType ? ` · ${row.expenseType}` : ""}</small></div> : <span className="muted">Belum di-assign</span>}</td>
           <td className="row-actions">{row.status === "SKIPPED" ? <><button className="icon-button action-assign" title="Assign" onClick={() => setAssignmentTarget({ ids: [row.id], direction: row.direction, date: row.date, description: row.description, amount: row.amount, accountHolder: row.accountHolder, accountNumber: row.accountNumber })}><ChevronRight /></button><button className="icon-button" title="Kembalikan" onClick={() => void runBulkAction("reopen", [row.id])}><Undo2 /></button></> : <><button className="icon-button action-assign" title="Assign" onClick={() => setAssignmentTarget({ ids: [row.id], direction: row.direction, date: row.date, description: row.description, amount: row.amount, accountHolder: row.accountHolder, accountNumber: row.accountNumber })}><ChevronRight /></button><button className="icon-button" title="Lewati" onClick={() => void runBulkAction("skip", [row.id])}><X /></button>{row.status === "MATCHED" && <span className="verified"><Check /></span>}</>}</td>
         </tr>)}
       </tbody></table></div> : <div className="empty-state"><span>✓</span><p>Tidak ada transaksi pada bagian ini.</p></div>}
