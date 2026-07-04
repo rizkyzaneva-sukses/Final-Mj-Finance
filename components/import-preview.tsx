@@ -52,6 +52,12 @@ export function ImportPreview({ batch, rows, master }: { batch: Batch; rows: Row
   const selectedRows = rows.filter((row) => selectedIds.includes(row.id));
   const mixedDirections = selectedRows.some((row) => row.direction !== selectedRows[0]?.direction);
 
+  function badgeClass(status: "UNMATCHED" | "MATCHED" | "SKIPPED") {
+    if (status === "UNMATCHED") return "badge-warning";
+    if (status === "SKIPPED") return "badge-muted";
+    return "badge-ok";
+  }
+
   function toggleRow(id: string) {
     setSelectedIds((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
   }
@@ -129,9 +135,9 @@ export function ImportPreview({ batch, rows, master }: { batch: Batch; rows: Row
 
     <section className="transaction-toolbar">
       <div className="status-tabs">
-        <button className={activeStatus === "UNMATCHED" ? "selected" : ""} onClick={() => setActiveStatus("UNMATCHED")}>Perlu ditinjau <b>{counts.UNMATCHED}</b></button>
-        <button className={activeStatus === "MATCHED" ? "selected" : ""} onClick={() => setActiveStatus("MATCHED")}>Sudah cocok <b>{counts.MATCHED}</b></button>
-        <button className={activeStatus === "SKIPPED" ? "selected" : ""} onClick={() => setActiveStatus("SKIPPED")}>Dilewati <b>{counts.SKIPPED}</b></button>
+        <button className={activeStatus === "UNMATCHED" ? "selected" : ""} onClick={() => setActiveStatus("UNMATCHED")}>Perlu ditinjau <b className={badgeClass("UNMATCHED")}>{counts.UNMATCHED}</b></button>
+        <button className={activeStatus === "MATCHED" ? "selected" : ""} onClick={() => setActiveStatus("MATCHED")}>Sudah cocok <b className={badgeClass("MATCHED")}>{counts.MATCHED}</b></button>
+        <button className={activeStatus === "SKIPPED" ? "selected" : ""} onClick={() => setActiveStatus("SKIPPED")}>Dilewati <b className={badgeClass("SKIPPED")}>{counts.SKIPPED}</b></button>
       </div>
       <form className="search-box" onSubmit={(event) => event.preventDefault()}><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari deskripsi atau rekening..." /></form>
     </section>

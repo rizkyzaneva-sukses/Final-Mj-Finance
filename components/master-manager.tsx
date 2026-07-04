@@ -175,6 +175,18 @@ export function MasterManager({
     return { short: note, tone: "count" as const, title: note };
   }
 
+  function mobileCardTitle(row: MappingRow) {
+    if (row.entity === "ministry") return `#${row.ministryCode} ${row.ministryName}`;
+    if (row.entity === "event") return row.eventName;
+    return row.incomeMasterName;
+  }
+
+  function mobileCardMeta(row: MappingRow) {
+    if (row.entity === "ministry") return "Kementerian";
+    if (row.entity === "event") return `Event · ${row.ministryName}`;
+    return `Pemasukan · ${row.eventName}`;
+  }
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setLoading(true);
@@ -353,7 +365,7 @@ export function MasterManager({
         </div>
       </div>
       <div className="responsive-table">
-        <table className="master-table">
+        <table className="master-table responsive-master-table">
           <thead>
             <tr>
               <th>Kementerian</th>
@@ -371,24 +383,28 @@ export function MasterManager({
                 const showEvent = row.entity === "event";
                 const note = noteMeta(row.note);
                 return <tr key={row.key} className={`master-row row-${row.entity}`}>
-                  <td className={`hierarchy-cell hierarchy-${row.entity}`}>
+                  <td className={`hierarchy-cell hierarchy-${row.entity}`} data-label="Kementerian">
+                    <div className="mobile-card-title">
+                      <strong>{mobileCardTitle(row)}</strong>
+                      <small>{mobileCardMeta(row)}</small>
+                    </div>
                     {showMinistry ? <div className="master-ministry-name"><span className="ministry-prefix">#{row.ministryCode}</span><strong>{row.ministryName}</strong></div> : <span className="muted"> </span>}
                   </td>
-                  <td className={`hierarchy-cell hierarchy-${row.entity}`}>
+                  <td className={`hierarchy-cell hierarchy-${row.entity}`} data-label="Event">
                     {showEvent ? <div className="master-event-name">{row.eventName}</div> : <span className="muted"> </span>}
                   </td>
-                  <td className={`hierarchy-cell hierarchy-${row.entity}`}>
+                  <td className={`hierarchy-cell hierarchy-${row.entity}`} data-label="Master pemasukan">
                     {row.entity === "income" ? <div className="master-income-name">{row.incomeMasterName}</div> : <span className="muted"> </span>}
                   </td>
-                  <td className="master-code-column">
+                  <td className="master-code-column" data-label="Kode unik">
                     {row.entity === "income"
                       ? <span className="code-chip code-chip-strong" title={`Kode unik ${row.uniqueCode}`}>{row.uniqueCode}</span>
                       : <span className="code-chip code-chip-muted" title="Belum ada kode unik">—</span>}
                   </td>
-                  <td>
+                  <td data-label="Catatan">
                     <span className={`status-pill tone-${note.tone}`} title={note.title}>{note.short}</span>
                   </td>
-                  <td className="row-actions">
+                  <td className="row-actions" data-label="Aksi">
                     <button className="icon-button" title="Edit" onClick={() => startEdit(row)}><Pencil /></button>
                     <button
                       className="icon-button"

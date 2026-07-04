@@ -33,7 +33,7 @@ export default async function DashboardPage() {
         <article className="stat-card stat-income"><div className="stat-icon"><ArrowDownLeft /></div><span>Pemasukan</span><strong>{compactRupiah.format(incomeValue)}</strong><small>Bulan berjalan</small></article>
         <article className="stat-card stat-expense"><div className="stat-icon"><ArrowUpRight /></div><span>Pengeluaran</span><strong>{compactRupiah.format(expenseValue)}</strong><small>Bulan berjalan</small></article>
         <article className="stat-card stat-balance"><div className="stat-icon">=</div><span>Arus kas bersih</span><strong>{compactRupiah.format(incomeValue - expenseValue)}</strong><small>Pemasukan dikurangi pengeluaran</small></article>
-        <article className="stat-card stat-alert"><div className="stat-icon"><CircleAlert /></div><span>Perlu ditinjau</span><strong>{unmatched}</strong><small>Transaksi belum di-assign</small></article>
+        <article className={`stat-card stat-alert ${unmatched > 0 ? "stat-alert-active" : ""}`}><div className="stat-icon"><CircleAlert /></div><span>Perlu ditinjau</span><strong>{unmatched}</strong><small>Transaksi belum di-assign</small></article>
       </section>
       <section className="dashboard-grid">
         <article className="panel chart-panel">

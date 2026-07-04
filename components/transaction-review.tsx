@@ -36,12 +36,18 @@ export function TransactionReview({ rows, master, activeStatus, counts }: { rows
     router.refresh();
   }
 
+  function badgeClass(status: "UNMATCHED" | "MATCHED" | "SKIPPED") {
+    if (status === "UNMATCHED") return "badge-warning";
+    if (status === "SKIPPED") return "badge-muted";
+    return "badge-ok";
+  }
+
   return <>
     <section className="transaction-toolbar">
       <div className="status-tabs">
-        <button className={activeStatus === "UNMATCHED" ? "selected" : ""} onClick={() => setStatus("UNMATCHED")}>Perlu ditinjau <b>{counts.UNMATCHED || 0}</b></button>
-        <button className={activeStatus === "MATCHED" ? "selected" : ""} onClick={() => setStatus("MATCHED")}>Sudah cocok <b>{counts.MATCHED || 0}</b></button>
-        <button className={activeStatus === "SKIPPED" ? "selected" : ""} onClick={() => setStatus("SKIPPED")}>Dilewati <b>{counts.SKIPPED || 0}</b></button>
+        <button className={activeStatus === "UNMATCHED" ? "selected" : ""} onClick={() => setStatus("UNMATCHED")}>Perlu ditinjau <b className={badgeClass("UNMATCHED")}>{counts.UNMATCHED || 0}</b></button>
+        <button className={activeStatus === "MATCHED" ? "selected" : ""} onClick={() => setStatus("MATCHED")}>Sudah cocok <b className={badgeClass("MATCHED")}>{counts.MATCHED || 0}</b></button>
+        <button className={activeStatus === "SKIPPED" ? "selected" : ""} onClick={() => setStatus("SKIPPED")}>Dilewati <b className={badgeClass("SKIPPED")}>{counts.SKIPPED || 0}</b></button>
       </div>
       <form className="search-box" onSubmit={search}><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari deskripsi..." /></form>
     </section>
