@@ -35,12 +35,12 @@ DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE?schema=public
 SESSION_SECRET=random-minimal-32-karakter
 FINANCE_LOGIN_CODE=kode-menkeu-yang-disepakati
 MINISTRY_LOGIN_CODE=kode-kementerian-yang-disepakati
-MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
-MIMO_API_KEY=token-rahasia-mimo
-MIMO_MODEL=MiMo-V2.5
+MIMO_BASE_URL=https://api.xiaomimimo.com/v1
+MIMO_API_KEY=sk-api-key-pay-as-you-go
+MIMO_MODEL=mimo-v2.5
 ```
 
-Saat container hidup, migration dan seed master data otomatis dijalankan. API key dan kode login tidak boleh dimasukkan ke repository.
+Gunakan API key pay-as-you-go (`sk-`), bukan key Token Plan (`tp-`). Token Plan hanya ditujukan untuk alat coding dan tidak boleh digunakan oleh backend aplikasi. Saat container hidup, migration dan seed master data otomatis dijalankan. API key dan kode login tidak boleh dimasukkan ke repository.
 
 ## Aturan kode unik
 
