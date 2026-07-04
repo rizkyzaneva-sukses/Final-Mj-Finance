@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { seedDefaultMaster } from "@/lib/default-master";
+import { seedDefaultMaster } from "../lib/default-master";
 
 const prisma = new PrismaClient();
 
