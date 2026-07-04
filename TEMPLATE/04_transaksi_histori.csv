@@ -1,0 +1,6 @@
+transaction_date,description,amount,direction,source,status,account_holder,account_number,source_reference,ministry_code,event_name,income_type_name,skip_reason,assigned_at,assigned_by_role
+2026-04-01,TRF BATCH MYBB - Pembayaran Trx 310326 - 010426,49650,IN,BANK_PDF,SKIPPED,MUHAMMAD FIRDAUS SUGIARSA,0590040242,,,,Gabungan pencairan QRIS,,
+2026-04-02,Transfer Sponsor Bukber 2026 100121,100121,IN,MANUAL,MATCHED,Muhammad Rizky,1234567890,LEGACY-TRX-0001,1,Bukber 2026,Sponsor,,2026-04-02T10:15:00+07:00,LEGACY_IMPORT
+2026-04-03,Pembayaran Pendaftaran Bukber 2026 200122,200122,IN,MANUAL,MATCHED,Muhammad Rizky,1234567890,LEGACY-TRX-0002,1,Bukber 2026,Pendaftaran,,2026-04-03T09:00:00+07:00,LEGACY_IMPORT
+2026-04-04,Pembelian konsumsi acara Bukber,175000,OUT,MANUAL,MATCHED,Muhammad Rizky,1234567890,LEGACY-TRX-0003,1,Bukber 2026,,,2026-04-04T13:00:00+07:00,LEGACY_IMPORT
+2026-04-05,Transfer masuk belum teridentifikasi,500000,IN,MANUAL,UNMATCHED,MUHAMMAD FIRDAUS SUGIARSA,0590040242,LEGACY-TRX-0004,,,,,,
