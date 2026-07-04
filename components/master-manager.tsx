@@ -30,7 +30,6 @@ type MappingRow =
       key: string;
       entity: "ministry";
       id: string;
-      level: "Kementerian";
       ministryId: string;
       ministryCode: number;
       ministryName: string;
@@ -47,7 +46,6 @@ type MappingRow =
       key: string;
       entity: "event";
       id: string;
-      level: "Event";
       ministryId: string;
       ministryCode: number;
       ministryName: string;
@@ -64,7 +62,6 @@ type MappingRow =
       key: string;
       entity: "income";
       id: string;
-      level: "Pemasukan Event";
       ministryId: string;
       ministryCode: number;
       ministryName: string;
@@ -109,67 +106,74 @@ export function MasterManager({
   const [actionId, setActionId] = useState<string | null>(null);
   const events = ministries.flatMap((ministry) => ministry.events.map((event) => ({ ...event, ministry })));
 
-  const mappingRows = useMemo<MappingRow[]>(() => {
-    const result: MappingRow[] = [];
-    for (const ministry of ministries) {
-      result.push({
-        key: `ministry-${ministry.id}`,
-        entity: "ministry",
-        id: ministry.id,
-        level: "Kementerian",
+  const mappingGroups = useMemo(() => ministries.map((ministry) => {
+    const rows: MappingRow[] = [{
+      key: `ministry-${ministry.id}`,
+      entity: "ministry",
+      id: ministry.id,
+      ministryId: ministry.id,
+      ministryCode: ministry.code,
+      ministryName: ministry.name,
+      eventId: null,
+      eventName: null,
+      category: null,
+      incomeMappingId: null,
+      incomeMasterId: null,
+      incomeMasterName: null,
+      uniqueCode: null,
+      note: `${ministry.events.length} event`,
+    }];
+
+    for (const event of ministry.events) {
+      rows.push({
+        key: `event-${event.id}`,
+        entity: "event",
+        id: event.id,
         ministryId: ministry.id,
         ministryCode: ministry.code,
         ministryName: ministry.name,
-        eventId: null,
-        eventName: null,
-        category: null,
+        eventId: event.id,
+        eventName: event.name,
+        category: event.category,
         incomeMappingId: null,
         incomeMasterId: null,
         incomeMasterName: null,
         uniqueCode: null,
-        note: `${ministry.events.length} event`,
+        note: event.incomeTypes.length ? `${event.incomeTypes.length} mapping pemasukan` : "Belum ada mapping pemasukan",
       });
-      for (const event of ministry.events) {
-        result.push({
-          key: `event-${event.id}`,
-          entity: "event",
-          id: event.id,
-          level: "Event",
+
+      for (const income of event.incomeTypes) {
+        rows.push({
+          key: `income-${income.id}`,
+          entity: "income",
+          id: income.id,
           ministryId: ministry.id,
           ministryCode: ministry.code,
           ministryName: ministry.name,
           eventId: event.id,
           eventName: event.name,
           category: event.category,
-          incomeMappingId: null,
-          incomeMasterId: null,
-          incomeMasterName: null,
-          uniqueCode: null,
-          note: event.incomeTypes.length ? `${event.incomeTypes.length} mapping pemasukan` : "Belum ada mapping pemasukan",
+          incomeMappingId: income.id,
+          incomeMasterId: income.incomeMasterId,
+          incomeMasterName: income.incomeMasterName,
+          uniqueCode: income.uniqueCode,
+          note: "Siap untuk auto-match",
         });
-        for (const income of event.incomeTypes) {
-          result.push({
-            key: `income-${income.id}`,
-            entity: "income",
-            id: income.id,
-            level: "Pemasukan Event",
-            ministryId: ministry.id,
-            ministryCode: ministry.code,
-            ministryName: ministry.name,
-            eventId: event.id,
-            eventName: event.name,
-            category: event.category,
-            incomeMappingId: income.id,
-            incomeMasterId: income.incomeMasterId,
-            incomeMasterName: income.incomeMasterName,
-            uniqueCode: income.uniqueCode,
-            note: "Siap untuk auto-match",
-          });
-        }
       }
     }
-    return result;
-  }, [ministries]);
+
+    return { ministryId: ministry.id, rows };
+  }), [ministries]);
+
+  function noteMeta(note: string) {
+    if (/siap/i.test(note)) {
+      return { short: "Siap", tone: "ready" as const, title: note };
+    }
+    if (/belum/i.test(note)) {
+      return { short: "Belum ada", tone: "empty" as const, title: note };
+    }
+    return { short: note, tone: "count" as const, title: note };
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -352,40 +356,53 @@ export function MasterManager({
         <table className="master-table">
           <thead>
             <tr>
-              <th>Level</th>
-              <th>Kode</th>
               <th>Kementerian</th>
               <th>Event</th>
-              <th>Kategori</th>
               <th>Master pemasukan</th>
               <th>Kode unik</th>
               <th>Catatan</th>
               <th />
             </tr>
           </thead>
-          <tbody>
-            {mappingRows.map((row) => <tr key={row.key}>
-              <td><span className={`level-pill level-${row.entity}`}>{row.level}</span></td>
-              <td><span className="ministry-code">{row.ministryCode}</span></td>
-              <td><strong>{row.ministryName}</strong></td>
-              <td>{row.eventName || <span className="muted">—</span>}</td>
-              <td>{row.category || <span className="muted">—</span>}</td>
-              <td>{row.incomeMasterName || <span className="muted">—</span>}</td>
-              <td>{row.uniqueCode ? <span className="code-chip">{row.uniqueCode}</span> : <span className="muted">—</span>}</td>
-              <td><small>{row.note}</small></td>
-              <td className="row-actions">
-                <button className="icon-button" title="Edit" onClick={() => startEdit(row)}><Pencil /></button>
-                <button
-                  className="icon-button"
-                  title="Hapus"
-                  disabled={actionId === row.id}
-                  onClick={() => void removeEntity(row.entity, row.id, row.entity === "ministry" ? row.ministryName : row.entity === "event" ? row.eventName || "" : `${row.eventName} · ${row.incomeMasterName}`)}
-                >
-                  {actionId === row.id ? <LoaderCircle className="spin" /> : <Trash2 />}
-                </button>
-              </td>
-            </tr>)}
-          </tbody>
+          {mappingGroups.map((group, groupIndex) => (
+            <tbody key={group.ministryId} className={`master-group ${groupIndex > 0 ? "group-start" : ""}`}>
+              {group.rows.map((row) => {
+                const showMinistry = row.entity === "ministry";
+                const showEvent = row.entity === "event";
+                const note = noteMeta(row.note);
+                return <tr key={row.key} className={`master-row row-${row.entity}`}>
+                  <td className={`hierarchy-cell hierarchy-${row.entity}`}>
+                    {showMinistry ? <div className="master-ministry-name"><span className="ministry-prefix">#{row.ministryCode}</span><strong>{row.ministryName}</strong></div> : <span className="muted"> </span>}
+                  </td>
+                  <td className={`hierarchy-cell hierarchy-${row.entity}`}>
+                    {showEvent ? <div className="master-event-name">{row.eventName}</div> : <span className="muted"> </span>}
+                  </td>
+                  <td className={`hierarchy-cell hierarchy-${row.entity}`}>
+                    {row.entity === "income" ? <div className="master-income-name">{row.incomeMasterName}</div> : <span className="muted"> </span>}
+                  </td>
+                  <td className="master-code-column">
+                    {row.entity === "income"
+                      ? <span className="code-chip code-chip-strong" title={`Kode unik ${row.uniqueCode}`}>{row.uniqueCode}</span>
+                      : <span className="code-chip code-chip-muted" title="Belum ada kode unik">—</span>}
+                  </td>
+                  <td>
+                    <span className={`status-pill tone-${note.tone}`} title={note.title}>{note.short}</span>
+                  </td>
+                  <td className="row-actions">
+                    <button className="icon-button" title="Edit" onClick={() => startEdit(row)}><Pencil /></button>
+                    <button
+                      className="icon-button"
+                      title="Hapus"
+                      disabled={actionId === row.id}
+                      onClick={() => void removeEntity(row.entity, row.id, row.entity === "ministry" ? row.ministryName : row.entity === "event" ? row.eventName || "" : `${row.eventName} · ${row.incomeMasterName}`)}
+                    >
+                      {actionId === row.id ? <LoaderCircle className="spin" /> : <Trash2 />}
+                    </button>
+                  </td>
+                </tr>;
+              })}
+            </tbody>
+          ))}
         </table>
       </div>
 
