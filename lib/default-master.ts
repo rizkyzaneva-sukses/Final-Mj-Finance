@@ -103,10 +103,43 @@ export async function seedDefaultMaster(db: DbLike) {
     const event = await db.event.findFirst({ where: { name: type.eventName } });
     const incomeMaster = await db.incomeMaster.findUnique({ where: { name: type.name } });
     if (!event) continue;
-    await db.incomeType.upsert({
+    const existingByCode = await db.incomeType.findUnique({ where: { uniqueCode: type.uniqueCode } });
+    if (existingByCode) {
+      await db.incomeType.update({
+        where: { id: existingByCode.id },
+        data: {
+          eventId: event.id,
+          name: type.name,
+          uniqueCode: type.uniqueCode,
+          incomeMasterId: incomeMaster?.id || null,
+          active: true,
+        },
+      });
+      continue;
+    }
+
+    const existingByEventName = await db.incomeType.findUnique({
       where: { eventId_name: { eventId: event.id, name: type.name } },
-      update: { uniqueCode: type.uniqueCode, active: true, incomeMasterId: incomeMaster?.id || null },
-      create: { eventId: event.id, name: type.name, uniqueCode: type.uniqueCode, incomeMasterId: incomeMaster?.id || null },
+    });
+    if (existingByEventName) {
+      await db.incomeType.update({
+        where: { id: existingByEventName.id },
+        data: {
+          uniqueCode: type.uniqueCode,
+          incomeMasterId: incomeMaster?.id || null,
+          active: true,
+        },
+      });
+      continue;
+    }
+
+    await db.incomeType.create({
+      data: {
+        eventId: event.id,
+        name: type.name,
+        uniqueCode: type.uniqueCode,
+        incomeMasterId: incomeMaster?.id || null,
+      },
     });
   }
 }
