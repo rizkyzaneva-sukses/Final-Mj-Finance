@@ -1,8 +1,8 @@
-import { Download } from "lucide-react";
+import { Download, FileText } from "lucide-react";
 import { PageHeading } from "@/components/page-heading";
 import { ReportFilters } from "@/components/report-filters";
-import { periodBounds, rupiah } from "@/lib/format";
-import { getReportData } from "@/lib/reports";
+import { dateId, periodBounds, rupiah } from "@/lib/format";
+import { getMeetingReportData } from "@/lib/meeting-report";
 
 export const dynamic = "force-dynamic";
 type Params = Promise<{ start?: string; end?: string }>;
@@ -10,26 +10,166 @@ type Params = Promise<{ start?: string; end?: string }>;
 export default async function ReportsPage({ searchParams }: { searchParams: Params }) {
   const params = await searchParams;
   const period = periodBounds(params.start, params.end);
-  const { ministryRows, eventRows } = await getReportData(period.startDate, period.endDate);
+  const data = await getMeetingReportData(period.startDate, period.endDate);
   const query = new URLSearchParams({ start: period.start, end: period.end }).toString();
 
-  const totalIncome = ministryRows.reduce((sum, row) => sum + row.income, 0);
-  const totalExpense = ministryRows.reduce((sum, row) => sum + row.expense, 0);
-  const totalEventIncome = eventRows.reduce((sum, row) => sum + row.income, 0);
-  const totalQrisFee = eventRows.reduce((sum, row) => sum + row.qrisFee, 0);
-  const totalEventExpense = eventRows.reduce((sum, row) => sum + row.expense, 0);
-  const totalEventNet = eventRows.reduce((sum, row) => sum + row.net, 0);
+  const totalIncome = data.ministryRows.reduce((sum, row) => sum + row.income, 0);
+  const totalExpense = data.ministryRows.reduce((sum, row) => sum + row.expense, 0);
+  const totalEventIncome = data.eventRows.reduce((sum, row) => sum + row.income, 0);
+  const totalEventQrisFee = data.eventRows.reduce((sum, row) => sum + row.qrisFee, 0);
+  const totalEventExpense = data.eventRows.reduce((sum, row) => sum + row.expense, 0);
+  const totalEventNet = data.eventRows.reduce((sum, row) => sum + row.net, 0);
 
   return (
     <div className="page-stack">
       <PageHeading
         eyebrow="LAPORAN ARUS KAS"
         title="Angka yang siap diceritakan."
-        description="Tinjau per kementerian dan event, lalu unduh Excel dengan merge-cell yang sudah rapi."
-        action={<a className="button button-primary" href={`/api/reports/export?${query}`}><Download size={17} /> Unduh Excel</a>}
+        description="Tinjau per kementerian dan event, siapkan ringkasan rapat mingguan, lalu unduh Excel atau lembar F4 siap simpan PDF."
+        action={(
+          <div className="page-heading-actions">
+            <a className="button button-primary" href={`/api/reports/export?${query}`}>
+              <Download size={17} />
+              Unduh Excel
+            </a>
+            <a className="button button-dark" href={`/meeting-sheet?${query}&print=1`} target="_blank" rel="noreferrer">
+              <FileText size={17} />
+              Unduh F4
+            </a>
+          </div>
+        )}
       />
 
       <ReportFilters start={period.start} end={period.end} />
+
+      <section className="panel meeting-summary-panel">
+        <div className="panel-title">
+          <div>
+            <span className="eyebrow">RINGKASAN RAPAT</span>
+            <h2>Materi meeting periode {dateId.format(period.startDate)} – {dateId.format(period.endDate)}</h2>
+          </div>
+          <a className="button button-dark" href={`/meeting-sheet?${query}`} target="_blank" rel="noreferrer">
+            <FileText size={16} />
+            Buka lembar F4
+          </a>
+        </div>
+
+        <div className="meeting-metrics-grid">
+          <div className="meeting-metric-card">
+            <span>Saldo terkonfirmasi</span>
+            <strong>{rupiah.format(data.confirmedTotal)}</strong>
+            <small>Mutasi bank + saldo awal</small>
+          </div>
+          <div className="meeting-metric-card">
+            <span>Estimasi QRIS belum cair</span>
+            <strong className="money-fee">{rupiah.format(data.qrisPendingNet)}</strong>
+            <small>Netto setelah potongan 0,7%</small>
+          </div>
+          <div className="meeting-metric-card">
+            <span>Saldo estimasi total</span>
+            <strong>{rupiah.format(data.estimatedTotal)}</strong>
+            <small>Dipakai untuk rapat mingguan</small>
+          </div>
+          <div className="meeting-metric-card">
+            <span>Perlu ditinjau</span>
+            <strong>{data.unmatchedCount}</strong>
+            <small>Belum final di periode ini</small>
+          </div>
+        </div>
+
+        <div className="meeting-account-grid">
+          {data.accountRows.map((account) => (
+            <article className="panel meeting-account-card" key={account.label}>
+              <div className="eyebrow">SALDO REKENING</div>
+              <h3>{account.label}</h3>
+              <div className="meeting-account-values">
+                <div>
+                  <small>Terkonfirmasi</small>
+                  <strong>{rupiah.format(account.confirmedBalance)}</strong>
+                </div>
+                <div>
+                  <small>Tambah estimasi QRIS</small>
+                  <strong className="money-fee">{rupiah.format(account.qrisEstimateNet)}</strong>
+                </div>
+                <div>
+                  <small>Saldo estimasi</small>
+                  <strong>{rupiah.format(account.estimatedBalance)}</strong>
+                </div>
+              </div>
+              <p>
+                {account.accountNumber ? `Rek. ${account.accountNumber}` : "Nomor rekening belum terbaca"}
+                <br />
+                {account.lastMutationAt ? `Mutasi terakhir ${dateId.format(account.lastMutationAt)}` : "Belum ada mutasi bank"}
+                {account.staleDays !== null ? ` · jeda ${account.staleDays} hari` : ""}
+              </p>
+            </article>
+          ))}
+        </div>
+
+        <div className="meeting-metrics-grid meeting-metrics-grid-secondary">
+          <div className="meeting-metric-card">
+            <span>Uang masuk rekening</span>
+            <strong className="money-in">{rupiah.format(data.bankIncome)}</strong>
+            <small>Cash basis · mutasi bank</small>
+          </div>
+          <div className="meeting-metric-card">
+            <span>Uang keluar rekening</span>
+            <strong className="money-out">{rupiah.format(data.bankExpense)}</strong>
+            <small>Cash basis · mutasi bank</small>
+          </div>
+          <div className="meeting-metric-card">
+            <span>Arus kas bersih</span>
+            <strong>{rupiah.format(data.bankNet)}</strong>
+            <small>Masuk dikurangi keluar</small>
+          </div>
+          <div className="meeting-metric-card">
+            <span>Pemasukan event <em className="report-mini-tag">Bruto</em></span>
+            <strong className="money-in">{rupiah.format(totalEventIncome)}</strong>
+            <small>Event basis</small>
+          </div>
+          <div className="meeting-metric-card">
+            <span>Potongan QRIS</span>
+            <strong className="money-fee">{rupiah.format(totalEventQrisFee)}</strong>
+            <small>Akumulasi fee event</small>
+          </div>
+          <div className="meeting-metric-card">
+            <span>Arus bersih event <em className="report-mini-tag">Netto</em></span>
+            <strong>{rupiah.format(totalEventNet)}</strong>
+            <small>Bruto - fee - pengeluaran</small>
+          </div>
+        </div>
+
+        <div className="meeting-highlight-table responsive-table">
+          <table className="report-table responsive-report-table">
+            <thead>
+              <tr>
+                <th>Event utama</th>
+                <th>Kementerian</th>
+                <th>Bruto</th>
+                <th>Pot. QRIS</th>
+                <th>Keluar</th>
+                <th>Netto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.eventHighlights.length ? data.eventHighlights.map((event) => (
+                <tr key={`${event.ministry}-${event.event}`}>
+                  <td data-label="Event utama"><strong>{event.event}</strong></td>
+                  <td data-label="Kementerian">{event.ministry}</td>
+                  <td className="money-in" data-label="Bruto">{rupiah.format(event.income)}</td>
+                  <td className="money-fee" data-label="Pot. QRIS">{rupiah.format(event.qrisFee)}</td>
+                  <td className="money-out" data-label="Keluar">{rupiah.format(event.expense)}</td>
+                  <td data-label="Netto"><strong>{rupiah.format(event.net)}</strong></td>
+                </tr>
+              )) : (
+                <tr>
+                  <td data-label="Event utama" colSpan={6}>Belum ada event terverifikasi pada periode ini.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section className="report-summary">
         <div>
@@ -53,7 +193,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Para
             <h2>Arus kas per kementerian</h2>
           </div>
         </div>
-        {ministryRows.length ? (
+        {data.ministryRows.length ? (
           <div className="responsive-table">
             <table className="report-table responsive-report-table">
               <thead>
@@ -66,7 +206,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Para
                 </tr>
               </thead>
               <tbody>
-                {ministryRows.map((row) => (
+                {data.ministryRows.map((row) => (
                   <tr key={row.code}>
                     <td data-label="Kode"><span className="ministry-code">{row.code}</span></td>
                     <td data-label="Kementerian"><strong>{row.ministry}</strong></td>
@@ -96,7 +236,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Para
           </div>
           <div>
             <span>Akumulasi potongan QRIS</span>
-            <strong className="money-fee">{rupiah.format(totalQrisFee)}</strong>
+            <strong className="money-fee">{rupiah.format(totalEventQrisFee)}</strong>
           </div>
           <div>
             <span>Pengeluaran event</span>
@@ -108,7 +248,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Para
           </div>
         </div>
 
-        {eventRows.length ? (
+        {data.eventRows.length ? (
           <div className="responsive-table">
             <table className="report-table event-report">
               <thead>
@@ -124,7 +264,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Para
                 </tr>
               </thead>
               <tbody>
-                {eventRows.flatMap((event) =>
+                {data.eventRows.flatMap((event) =>
                   event.incomeRows.map((income, index) => (
                     <tr key={`${event.event}-${income.type}-${index}`}>
                       {index === 0 && <td rowSpan={event.incomeRows.length} data-label="Event"><strong>{event.event}</strong></td>}
