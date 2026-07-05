@@ -23,6 +23,7 @@ type Event = { id: string; name: string; category: string | null; active: boolea
 type Ministry = { id: string; code: number; name: string; active: boolean; events: Event[] };
 type IncomeMaster = { id: string; name: string; active: boolean };
 type ExpenseType = { id: string; name: string; active: boolean };
+type OpeningBalance = { id: string; accountHolder: string; accountNumber: string | null; amount: number; transactionDate: string; note: string | null };
 
 type Tab = "ministry" | "event" | "incomeMapping" | "incomeMaster" | "expenseType";
 
@@ -82,16 +83,22 @@ type EditState =
   | { entity: "income"; id: string; eventId: string; incomeMasterId: string; uniqueCode: string }
   | { entity: "incomeMaster"; id: string; name: string }
   | { entity: "expenseType"; id: string; name: string }
+  | { entity: "openingBalance"; id: string; accountHolder: string; accountNumber: string; amount: string; transactionDate: string; note: string }
   | null;
+
+const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
+const dateLabel = new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", year: "numeric" });
 
 export function MasterManager({
   ministries,
   incomeMasters,
   expenseTypes,
+  openingBalances,
 }: {
   ministries: Ministry[];
   incomeMasters: IncomeMaster[];
   expenseTypes: ExpenseType[];
+  openingBalances: OpeningBalance[];
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("incomeMapping");
@@ -105,6 +112,9 @@ export function MasterManager({
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState("");
   const [actionId, setActionId] = useState<string | null>(null);
+  const [openingForm, setOpeningForm] = useState<Record<string, string>>({});
+  const [openingLoading, setOpeningLoading] = useState(false);
+  const [openingError, setOpeningError] = useState("");
   const events = ministries.flatMap((ministry) => ministry.events.map((event) => ({ ...event, ministry })));
 
   useEffect(() => {
@@ -236,13 +246,45 @@ export function MasterManager({
     setResetLoading(false);
   }
 
-  function startEdit(row: MappingRow | IncomeMaster | ExpenseType, entity?: "incomeMaster" | "expenseType") {
+  async function submitOpeningBalance(event: React.FormEvent) {
+    event.preventDefault();
+    setOpeningLoading(true);
+    setOpeningError("");
+    const response = await fetch("/api/opening-balances", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(openingForm),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setOpeningError(payload.error || "Saldo awal gagal disimpan.");
+      setOpeningLoading(false);
+      return;
+    }
+    setOpeningForm({});
+    setOpeningLoading(false);
+    router.refresh();
+  }
+
+  function startEdit(row: MappingRow | IncomeMaster | ExpenseType | OpeningBalance, entity?: "incomeMaster" | "expenseType" | "openingBalance") {
     if (entity === "incomeMaster" && "name" in row) {
       setEditing({ entity: "incomeMaster", id: row.id, name: row.name });
       return;
     }
     if (entity === "expenseType" && "name" in row) {
       setEditing({ entity: "expenseType", id: row.id, name: row.name });
+      return;
+    }
+    if (entity === "openingBalance" && "accountHolder" in row) {
+      setEditing({
+        entity: "openingBalance",
+        id: row.id,
+        accountHolder: row.accountHolder,
+        accountNumber: row.accountNumber || "",
+        amount: String(row.amount),
+        transactionDate: row.transactionDate,
+        note: row.note || "",
+      });
       return;
     }
     if ("entity" in row && row.entity === "ministry") {
@@ -274,11 +316,13 @@ export function MasterManager({
         ? { entity: "event", id: editing.id, ministryId: editing.ministryId, name: editing.name, category: editing.category }
         : editing.entity === "income"
           ? { entity: "income", id: editing.id, eventId: editing.eventId, incomeMasterId: editing.incomeMasterId, uniqueCode: editing.uniqueCode }
+          : editing.entity === "openingBalance"
+            ? { id: editing.id, accountHolder: editing.accountHolder, accountNumber: editing.accountNumber, amount: editing.amount, transactionDate: editing.transactionDate, note: editing.note }
           : editing.entity === "incomeMaster"
             ? { entity: "incomeMaster", id: editing.id, name: editing.name }
             : { entity: "expenseType", id: editing.id, name: editing.name };
-    const response = await fetch("/api/master", {
-      method: "PATCH",
+    const response = await fetch(editing.entity === "openingBalance" ? "/api/opening-balances" : "/api/master", {
+      method: editing.entity === "openingBalance" ? "PATCH" : "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
@@ -290,6 +334,20 @@ export function MasterManager({
     }
     setEditing(null);
     setEditLoading(false);
+    router.refresh();
+  }
+
+  async function removeOpeningBalance(id: string, label: string) {
+    if (!window.confirm(`Hapus saldo awal untuk "${label}"?`)) return;
+    setActionId(id);
+    const response = await fetch("/api/opening-balances", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) alert(body.error || "Saldo awal gagal dihapus.");
+    setActionId(null);
     router.refresh();
   }
 
@@ -365,6 +423,22 @@ export function MasterManager({
           Reset semua data
         </button>
       </div>
+      <form className="account-setup-box" onSubmit={submitOpeningBalance}>
+        <div className="reset-box-header">
+          <span className="reset-icon"><WalletCards size={16} /></span>
+          <div>
+            <strong>Saldo awal rekening</strong>
+            <small>Dipakai untuk menghitung sisa uang saat ini. Tidak masuk ke mapping event dan tidak mengganggu impor mutasi/QRIS.</small>
+          </div>
+        </div>
+        <label>Nama pemilik rekening<input value={openingForm.accountHolder || ""} onChange={(e) => setOpeningForm({ ...openingForm, accountHolder: e.target.value })} placeholder="Muhammad Rizky / Sugiarsa" required /></label>
+        <label>Nomor rekening (opsional)<input inputMode="numeric" value={openingForm.accountNumber || ""} onChange={(e) => setOpeningForm({ ...openingForm, accountNumber: e.target.value.replace(/\D/g, "") })} placeholder="Contoh: 0590040242" /></label>
+        <label>Tanggal saldo awal<input type="date" value={openingForm.transactionDate || ""} onChange={(e) => setOpeningForm({ ...openingForm, transactionDate: e.target.value })} required /></label>
+        <label>Nominal saldo awal<input inputMode="numeric" value={openingForm.amount || ""} onChange={(e) => setOpeningForm({ ...openingForm, amount: e.target.value.replace(/\D/g, "") })} placeholder="Contoh: 1500000" required /></label>
+        <label>Catatan (opsional)<input value={openingForm.note || ""} onChange={(e) => setOpeningForm({ ...openingForm, note: e.target.value })} placeholder="Saldo per tanggal awal pencatatan" /></label>
+        {openingError && <div className="form-error">{openingError}</div>}
+        <button className="button button-primary button-wide" disabled={openingLoading}>{openingLoading ? <LoaderCircle className="spin" /> : <Plus />} Simpan saldo awal</button>
+      </form>
     </section>
 
     <section className="panel master-list-panel table-panel">
@@ -479,6 +553,31 @@ export function MasterManager({
           </div>
         </section>
       </div>
+      <section className="master-subtable opening-balance-panel">
+        <div className="panel-title">
+          <div>
+            <span className="eyebrow">SALDO AWAL REKENING</span>
+            <h2>Posisi awal uang</h2>
+          </div>
+        </div>
+        <div className="responsive-table">
+          <table className="master-table compact-table">
+            <thead><tr><th>Rekening</th><th>Tanggal</th><th>Nominal</th><th>Catatan</th><th /></tr></thead>
+            <tbody>
+              {openingBalances.length ? openingBalances.map((row) => <tr key={row.id}>
+                <td><strong>{row.accountHolder}</strong><small>{row.accountNumber || "Nomor rekening belum diisi"}</small></td>
+                <td><strong>{dateLabel.format(new Date(`${row.transactionDate}T00:00:00+07:00`))}</strong></td>
+                <td><strong>{rupiah.format(row.amount)}</strong></td>
+                <td><small className="opening-balance-note">{row.note || "Tanpa catatan"}</small></td>
+                <td className="row-actions">
+                  <button className="icon-button" onClick={() => startEdit(row, "openingBalance")}><Pencil /></button>
+                  <button className="icon-button" disabled={actionId === row.id} onClick={() => void removeOpeningBalance(row.id, row.accountHolder)}>{actionId === row.id ? <LoaderCircle className="spin" /> : <Trash2 />}</button>
+                </td>
+              </tr>) : <tr><td colSpan={5}><span className="muted">Belum ada saldo awal rekening.</span></td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </section>
 
     {editing && typeof document !== "undefined" && createPortal(
@@ -489,9 +588,10 @@ export function MasterManager({
           <h2>
             {editing.entity === "ministry" ? "Ubah kementerian" :
               editing.entity === "event" ? "Ubah event" :
-                editing.entity === "income" ? "Ubah mapping pemasukan" :
-                  editing.entity === "incomeMaster" ? "Ubah master pemasukan" :
-                    "Ubah jenis pengeluaran"}
+                  editing.entity === "income" ? "Ubah mapping pemasukan" :
+                    editing.entity === "openingBalance" ? "Ubah saldo awal rekening" :
+                editing.entity === "incomeMaster" ? "Ubah master pemasukan" :
+                  "Ubah jenis pengeluaran"}
           </h2>
           {editing.entity === "ministry" && <>
             <label>Kode kementerian<input type="number" min="0" value={editing.code} onChange={(e) => setEditing({ ...editing, code: e.target.value })} /></label>
@@ -506,6 +606,13 @@ export function MasterManager({
             <label>Event<select value={editing.eventId} onChange={(e) => setEditing({ ...editing, eventId: e.target.value })}><option value="">Pilih event...</option>{editEvents.map((row) => <option key={row.id} value={row.id}>{row.ministry.code} · {row.ministry.name} / {row.name}</option>)}</select></label>
             <label>Master pemasukan<select value={editing.incomeMasterId} onChange={(e) => setEditing({ ...editing, incomeMasterId: e.target.value })}><option value="">Pilih master pemasukan...</option>{incomeMasters.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
             <label>Kode unik<input inputMode="numeric" maxLength={8} value={editing.uniqueCode} onChange={(e) => setEditing({ ...editing, uniqueCode: e.target.value.replace(/\D/g, "") })} /></label>
+          </>}
+          {editing.entity === "openingBalance" && <>
+            <label>Nama pemilik rekening<input value={editing.accountHolder} onChange={(e) => setEditing({ ...editing, accountHolder: e.target.value })} /></label>
+            <label>Nomor rekening (opsional)<input inputMode="numeric" value={editing.accountNumber} onChange={(e) => setEditing({ ...editing, accountNumber: e.target.value.replace(/\D/g, "") })} /></label>
+            <label>Tanggal saldo awal<input type="date" value={editing.transactionDate} onChange={(e) => setEditing({ ...editing, transactionDate: e.target.value })} /></label>
+            <label>Nominal saldo awal<input inputMode="numeric" value={editing.amount} onChange={(e) => setEditing({ ...editing, amount: e.target.value.replace(/\D/g, "") })} /></label>
+            <label>Catatan (opsional)<input value={editing.note} onChange={(e) => setEditing({ ...editing, note: e.target.value })} /></label>
           </>}
           {editing.entity === "incomeMaster" && <label>Nama master pemasukan<input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></label>}
           {editing.entity === "expenseType" && <label>Nama jenis pengeluaran<input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></label>}

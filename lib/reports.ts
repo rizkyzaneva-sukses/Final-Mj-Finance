@@ -1,12 +1,19 @@
 import { db } from "@/lib/db";
 
+import { OPENING_BALANCE_PREFIX } from "@/lib/opening-balance";
+
 export type MinistryReportRow = { code: number; ministry: string; income: number; expense: number; net: number };
 export type EventReportRow = { event: string; ministry: string; incomeRows: { type: string; code: string | null; amount: number }[]; expense: number };
 
 export async function getReportData(startDate: Date, endDate: Date) {
   const [transactions, ministries] = await Promise.all([
     db.transaction.findMany({
-      where: { isDraft: false, status: "MATCHED", transactionDate: { gte: startDate, lte: endDate } },
+      where: {
+        isDraft: false,
+        status: "MATCHED",
+        transactionDate: { gte: startDate, lte: endDate },
+        NOT: { source: "MANUAL", sourceReference: { startsWith: OPENING_BALANCE_PREFIX } },
+      },
       include: { ministry: true, event: true, incomeType: true },
       orderBy: { transactionDate: "asc" },
     }),

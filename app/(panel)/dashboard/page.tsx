@@ -4,6 +4,7 @@ import { ArrowDownLeft, ArrowRight, ArrowUpRight, CircleAlert, Sparkles } from "
 import { PageHeading } from "@/components/page-heading";
 import { db } from "@/lib/db";
 import { compactRupiah, dateId, periodBounds, rupiah } from "@/lib/format";
+import { OPENING_BALANCE_PREFIX } from "@/lib/opening-balance";
 
 export const dynamic = "force-dynamic";
 const bankSources: TransactionSource[] = ["BANK_PDF", "BANK_SCREENSHOT"];
@@ -14,6 +15,12 @@ const trackedAccounts = [
 
 export default async function DashboardPage() {
   const { startDate, endDate } = periodBounds();
+  const balanceSourceWhere = {
+    OR: [
+      { source: { in: bankSources } },
+      { source: "MANUAL" as const, sourceReference: { startsWith: OPENING_BALANCE_PREFIX } },
+    ],
+  };
   const [bankMonthIncome, bankMonthExpense, unmatched, recent, byMinistry, bankBalances] = await Promise.all([
     db.transaction.aggregate({ where: { isDraft: false, source: { in: bankSources }, direction: "IN", transactionDate: { gte: startDate, lte: endDate } }, _sum: { amount: true } }),
     db.transaction.aggregate({ where: { isDraft: false, source: { in: bankSources }, direction: "OUT", transactionDate: { gte: startDate, lte: endDate } }, _sum: { amount: true } }),
@@ -37,7 +44,7 @@ export default async function DashboardPage() {
     }),
     db.transaction.groupBy({
       by: ["accountHolder", "accountNumber", "direction"],
-      where: { isDraft: false, source: { in: bankSources } },
+      where: { isDraft: false, ...balanceSourceWhere },
       _sum: { amount: true },
     }),
   ]);
