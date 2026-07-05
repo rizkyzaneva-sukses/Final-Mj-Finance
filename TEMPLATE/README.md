@@ -60,3 +60,16 @@ Template ini adalah format persiapan data. Kalau Anda mau, langkah berikutnya sa
 
 1. fitur impor CSV master + histori langsung dari folder ini, atau
 2. skrip migrasi sekali jalan untuk data lama Anda.
+
+## Versi Final yang Dipakai Sekarang
+
+Kalau master di aplikasi sudah final dan Anda sekarang fokus ke upload histori lama, pakai file berikut:
+
+| File | Status | Fungsi |
+| --- | --- | --- |
+| `04_transaksi_histori_FINAL.xlsx` | Utama | Template final histori transaksi yang nanti kita isi bareng |
+| `04_transaksi_histori_FINAL.csv` | Alternatif | Isi sama seperti file XLSX, kalau lebih nyaman kerja di CSV |
+| `05_rekening_referensi_opsional_FINAL.xlsx` | Opsional | Referensi rekening lama kalau ada lebih dari satu rekening |
+| `05_rekening_referensi_opsional_FINAL.csv` | Alternatif | Versi CSV dari referensi rekening |
+
+Saran saya: isi dulu `04_transaksi_histori_FINAL.xlsx`, karena lebih enak dibaca dan ada sheet petunjuk + referensi nilai.

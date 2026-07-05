@@ -8,3 +8,6 @@ coverage/
 *.tsbuildinfo
 work/
 outputs/
+TEMPLATE/**
+!TEMPLATE/
+!TEMPLATE/README.md
