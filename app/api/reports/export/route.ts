@@ -20,6 +20,10 @@ export async function GET(request: Request) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "MUDA JUARA FINANCE";
   workbook.created = new Date();
+  const totalEventIncome = eventRows.reduce((sum, row) => sum + row.income, 0);
+  const totalQrisFee = eventRows.reduce((sum, row) => sum + row.qrisFee, 0);
+  const totalEventExpense = eventRows.reduce((sum, row) => sum + row.expense, 0);
+  const totalEventNet = eventRows.reduce((sum, row) => sum + row.net, 0);
 
   const cash = workbook.addWorksheet("Arus Kas Kementerian", { views: [{ state: "frozen", ySplit: 4 }] });
   cash.columns = [{ width: 12 }, { width: 34 }, { width: 22 }, { width: 22 }, { width: 22 }];
@@ -28,18 +32,28 @@ export async function GET(request: Request) {
   cash.addRow([]); cash.addRow(["Kode", "Kementerian", "Pemasukan", "Pengeluaran", "Arus Bersih"]);
   ministryRows.forEach((row) => cash.addRow([row.code, row.ministry, row.income, row.expense, row.net]));
   cash.addRow(["", "TOTAL", ministryRows.reduce((s, r) => s + r.income, 0), ministryRows.reduce((s, r) => s + r.expense, 0), ministryRows.reduce((s, r) => s + r.net, 0)]);
-  styleSheet(cash, 5);
+  styleSheet(cash, 5, 3, [4]);
 
   const events = workbook.addWorksheet("Arus Kas Event", { views: [{ state: "frozen", ySplit: 4 }] });
-  events.columns = [{ width: 28 }, { width: 30 }, { width: 26 }, { width: 13 }, { width: 22 }, { width: 22 }];
-  events.mergeCells("A1:F1"); events.getCell("A1").value = "LAPORAN ARUS KAS PER EVENT";
-  events.mergeCells("A2:F2"); events.getCell("A2").value = `Periode ${dateId.format(period.startDate)} s/d ${dateId.format(period.endDate)}`;
-  events.addRow([]); events.addRow(["Event", "Kementerian", "Jenis Pemasukan", "Kode", "Pemasukan", "Pengeluaran"]);
+  events.columns = [{ width: 28 }, { width: 30 }, { width: 26 }, { width: 13 }, { width: 22 }, { width: 22 }, { width: 22 }, { width: 22 }];
+  events.mergeCells("A1:H1"); events.getCell("A1").value = "LAPORAN ARUS KAS PER EVENT";
+  events.mergeCells("A2:H2"); events.getCell("A2").value = `Periode ${dateId.format(period.startDate)} s/d ${dateId.format(period.endDate)}`;
+  events.addRow([]);
+  events.addRow(["Event", "Kementerian", "Jenis Pemasukan", "Kode", "Pemasukan", "Potongan QRIS", "Pengeluaran", "Arus Bersih"]);
   let rowNumber = 5;
   for (const event of eventRows) {
     const firstRow = rowNumber;
     event.incomeRows.forEach((income, index) => {
-      events.addRow([index === 0 ? event.event : "", index === 0 ? event.ministry : "", income.type, income.code || "", income.amount, index === 0 ? event.expense : ""]);
+      events.addRow([
+        index === 0 ? event.event : "",
+        index === 0 ? event.ministry : "",
+        income.type,
+        income.code || "",
+        income.amount,
+        index === 0 ? event.qrisFee : "",
+        index === 0 ? event.expense : "",
+        index === 0 ? event.net : "",
+      ]);
       rowNumber++;
     });
     const lastRow = rowNumber - 1;
@@ -47,16 +61,19 @@ export async function GET(request: Request) {
       events.mergeCells(`A${firstRow}:A${lastRow}`);
       events.mergeCells(`B${firstRow}:B${lastRow}`);
       events.mergeCells(`F${firstRow}:F${lastRow}`);
+      events.mergeCells(`G${firstRow}:G${lastRow}`);
+      events.mergeCells(`H${firstRow}:H${lastRow}`);
     }
   }
-  styleSheet(events, 6);
+  events.addRow(["", "", "TOTAL", "", totalEventIncome, totalQrisFee, totalEventExpense, totalEventNet]);
+  styleSheet(events, 8, 5, [6, 7]);
 
   const buffer = await workbook.xlsx.writeBuffer();
   const filename = `laporan-muda-juara-${period.start}-sd-${period.end}.xlsx`;
   return new Response(new Uint8Array(buffer), { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": `attachment; filename="${filename}"` } });
 }
 
-function styleSheet(sheet: ExcelJS.Worksheet, columnCount: number) {
+function styleSheet(sheet: ExcelJS.Worksheet, columnCount: number, moneyColumnStart: number, accentColumns: number[] = []) {
   sheet.getRow(1).height = 32;
   sheet.getCell("A1").font = { name: "Aptos Display", size: 18, bold: true, color: { argb: "FFFFFFFF" } };
   sheet.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${emerald}` } };
@@ -72,10 +89,12 @@ function styleSheet(sheet: ExcelJS.Worksheet, columnCount: number) {
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: row % 2 ? `FF${cream}` : "FFFFFFFF" } };
       cell.border = { bottom: { style: "hair", color: { argb: "FFD8D3C6" } } };
       cell.alignment = { vertical: "middle", wrapText: true };
-      if (col >= columnCount - 1) cell.numFmt = moneyFormat;
+      if (col >= moneyColumnStart) cell.numFmt = moneyFormat;
     });
   }
   sheet.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: columnCount } };
   sheet.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.3, right: 0.3, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } };
-  sheet.getColumn(columnCount).font = { color: { argb: `FF${orange}` } };
+  accentColumns.forEach((column) => {
+    sheet.getColumn(column).font = { color: { argb: `FF${orange}` } };
+  });
 }

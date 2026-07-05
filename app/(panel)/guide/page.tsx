@@ -197,7 +197,7 @@ export default function GuidePage() {
             ))}
             <div className="guide-callout tone-warn">
               <strong>Soal potongan QRIS 0,7%</strong>
-              <p>Nominal QRIS adalah bruto transaksi customer. Dana yang cair ke rekening bisa lebih kecil karena potongan. Jadi untuk laporan event sebaiknya QRIS dipakai sebagai omzet pemasukan, sedangkan untuk saldo rekening tetap pakai mutasi bank.</p>
+              <p>Nominal QRIS adalah bruto transaksi customer. Dana yang cair ke rekening bisa lebih kecil karena potongan. Jadi di laporan event paling aman baca empat angka ini: bruto pemasukan, potongan QRIS, pengeluaran, lalu arus bersih event. Untuk saldo rekening tetap pakai mutasi bank.</p>
             </div>
           </div>
         </article>
