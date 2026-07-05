@@ -103,28 +103,34 @@ export async function seedDefaultMaster(db: DbLike) {
     const event = await db.event.findFirst({ where: { name: type.eventName } });
     const incomeMaster = await db.incomeMaster.findUnique({ where: { name: type.name } });
     if (!event) continue;
+    const existingByEventName = await db.incomeType.findUnique({
+      where: { eventId_name: { eventId: event.id, name: type.name } },
+    });
     const existingByCode = await db.incomeType.findUnique({ where: { uniqueCode: type.uniqueCode } });
+
+    if (existingByEventName) {
+      await db.incomeType.update({
+        where: { id: existingByEventName.id },
+        data: {
+          incomeMasterId: incomeMaster?.id || null,
+          active: true,
+          ...(existingByCode && existingByCode.id !== existingByEventName.id ? {} : { uniqueCode: type.uniqueCode }),
+        },
+      });
+      if (existingByCode && existingByCode.id !== existingByEventName.id) {
+        console.warn(
+          `[seed] Kode unik ${type.uniqueCode} sudah dipakai mapping lain, jadi mapping default ${event.name} / ${type.name} diaktifkan tanpa memindahkan kode itu.`,
+        );
+      }
+      continue;
+    }
+
     if (existingByCode) {
       await db.incomeType.update({
         where: { id: existingByCode.id },
         data: {
           eventId: event.id,
           name: type.name,
-          uniqueCode: type.uniqueCode,
-          incomeMasterId: incomeMaster?.id || null,
-          active: true,
-        },
-      });
-      continue;
-    }
-
-    const existingByEventName = await db.incomeType.findUnique({
-      where: { eventId_name: { eventId: event.id, name: type.name } },
-    });
-    if (existingByEventName) {
-      await db.incomeType.update({
-        where: { id: existingByEventName.id },
-        data: {
           uniqueCode: type.uniqueCode,
           incomeMasterId: incomeMaster?.id || null,
           active: true,
