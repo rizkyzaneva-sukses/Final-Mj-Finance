@@ -2,30 +2,122 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, ChevronRight, LoaderCircle, Search, Undo2, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, LoaderCircle, Search, Undo2, X } from "lucide-react";
 import { dateId, rupiah } from "@/lib/format";
 import { TransactionAssignmentModal, type AssignmentTarget, type MasterTree } from "@/components/transaction-assignment-modal";
 
 type Row = { id: string; date: string; description: string; amount: number; direction: "IN" | "OUT"; source: string; status: string; ministry: string | null; event: string | null; incomeType: string | null; expenseType: string | null; skipReason: string | null; accountHolder: string | null; accountNumber: string | null };
+type Option = { value: string; label: string };
+type EventOption = Option & { ministryId: string };
+type IncomeTypeOption = Option & { ministryId: string; eventId: string };
 
-export function TransactionReview({ rows, master, activeStatus, counts }: { rows: Row[]; master: MasterTree[]; activeStatus: string; counts: Record<string, number> }) {
+export function TransactionReview({
+  rows,
+  master,
+  activeStatus,
+  counts,
+  filters,
+  pagination,
+}: {
+  rows: Row[];
+  master: MasterTree[];
+  activeStatus: string;
+  counts: Record<string, number>;
+  filters: {
+    query: string;
+    source: string;
+    ministryId: string;
+    eventId: string;
+    incomeTypeId: string;
+    expenseTypeId: string;
+    account: string;
+    direction: string;
+    ministries: Option[];
+    events: EventOption[];
+    incomeTypes: IncomeTypeOption[];
+    expenseTypes: Option[];
+    accounts: Option[];
+  };
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalRows: number;
+    totalPages: number;
+  };
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [selected, setSelected] = useState<AssignmentTarget | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [query, setQuery] = useState(searchParams.get("q") || "");
+  const [query, setQuery] = useState(filters.query);
+  const [form, setForm] = useState({
+    ministryId: filters.ministryId,
+    eventId: filters.eventId,
+    incomeTypeId: filters.incomeTypeId,
+    expenseTypeId: filters.expenseTypeId,
+    account: filters.account,
+    direction: filters.direction,
+  });
+  const visibleEvents = filters.events.filter((item) => !form.ministryId || item.ministryId === form.ministryId);
+  const visibleIncomeTypes = filters.incomeTypes.filter((item) => {
+    if (form.eventId) return item.eventId === form.eventId;
+    if (form.ministryId) return item.ministryId === form.ministryId;
+    return true;
+  });
+
+  function pushWith(next: URLSearchParams) {
+    const queryString = next.toString();
+    router.push(queryString ? `/transactions?${queryString}` : "/transactions");
+  }
 
   function setStatus(status: string) {
     const next = new URLSearchParams(searchParams);
     next.set("status", status);
-    router.push(`/transactions?${next}`);
+    next.delete("page");
+    pushWith(next);
   }
 
   function search(event: React.FormEvent) {
     event.preventDefault();
     const next = new URLSearchParams(searchParams);
     if (query) next.set("q", query); else next.delete("q");
-    router.push(`/transactions?${next}`);
+    if (form.ministryId) next.set("ministryId", form.ministryId); else next.delete("ministryId");
+    if (form.eventId) next.set("eventId", form.eventId); else next.delete("eventId");
+    if (form.incomeTypeId) next.set("incomeTypeId", form.incomeTypeId); else next.delete("incomeTypeId");
+    if (form.expenseTypeId) next.set("expenseTypeId", form.expenseTypeId); else next.delete("expenseTypeId");
+    if (form.account) next.set("account", form.account); else next.delete("account");
+    if (form.direction) next.set("direction", form.direction); else next.delete("direction");
+    next.delete("page");
+    pushWith(next);
+  }
+
+  function clearFilters() {
+    setQuery("");
+    setForm({
+      ministryId: "",
+      eventId: "",
+      incomeTypeId: "",
+      expenseTypeId: "",
+      account: "",
+      direction: "",
+    });
+    const next = new URLSearchParams(searchParams);
+    next.delete("q");
+    next.delete("ministryId");
+    next.delete("eventId");
+    next.delete("incomeTypeId");
+    next.delete("expenseTypeId");
+    next.delete("account");
+    next.delete("direction");
+    next.delete("page");
+    pushWith(next);
+  }
+
+  function goToPage(page: number) {
+    const next = new URLSearchParams(searchParams);
+    if (page <= 1) next.delete("page");
+    else next.set("page", String(page));
+    pushWith(next);
   }
 
   async function changeStatus(row: Row, action: "skip" | "reopen") {
@@ -49,7 +141,22 @@ export function TransactionReview({ rows, master, activeStatus, counts }: { rows
         <button className={activeStatus === "MATCHED" ? "selected" : ""} onClick={() => setStatus("MATCHED")}>Sudah cocok <b className={badgeClass("MATCHED")}>{counts.MATCHED || 0}</b></button>
         <button className={activeStatus === "SKIPPED" ? "selected" : ""} onClick={() => setStatus("SKIPPED")}>Dilewati <b className={badgeClass("SKIPPED")}>{counts.SKIPPED || 0}</b></button>
       </div>
-      <form className="search-box" onSubmit={search}><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari deskripsi..." /></form>
+      <form className="search-box" onSubmit={search}><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari deskripsi, event, kementerian, rekening..." /></form>
+    </section>
+    <section className="panel transaction-filter-panel">
+      <form className="transaction-filters" onSubmit={search}>
+        <label>Cari teks<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Deskripsi / rekening / event" /></label>
+        <label>Kementerian<select value={form.ministryId} onChange={(event) => setForm((current) => ({ ...current, ministryId: event.target.value, eventId: "", incomeTypeId: "" }))}><option value="">Semua kementerian</option>{filters.ministries.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+        <label>Event<select value={form.eventId} onChange={(event) => setForm((current) => ({ ...current, eventId: event.target.value, incomeTypeId: "" }))}><option value="">Semua event</option>{visibleEvents.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+        <label>Jenis pemasukan<select value={form.incomeTypeId} onChange={(event) => setForm((current) => ({ ...current, incomeTypeId: event.target.value }))}><option value="">Semua pemasukan</option>{visibleIncomeTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+        <label>Jenis pengeluaran<select value={form.expenseTypeId} onChange={(event) => setForm((current) => ({ ...current, expenseTypeId: event.target.value }))}><option value="">Semua pengeluaran</option>{filters.expenseTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+        <label>Sumber rekening<select value={form.account} onChange={(event) => setForm((current) => ({ ...current, account: event.target.value }))}><option value="">Semua rekening</option>{filters.accounts.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+        <label>In / Out<select value={form.direction} onChange={(event) => setForm((current) => ({ ...current, direction: event.target.value }))}><option value="">Semua arah</option><option value="IN">Masuk</option><option value="OUT">Keluar</option></select></label>
+        <div className="transaction-filter-actions">
+          <button className="button button-dark" type="submit">Terapkan filter</button>
+          <button className="button" type="button" onClick={clearFilters}>Reset</button>
+        </div>
+      </form>
     </section>
     <section className="panel table-panel">
       {rows.length ? <div className="responsive-table"><table><thead><tr><th>Tanggal & sumber</th><th>Rekening</th><th>Deskripsi</th><th>Arah</th><th>Nominal</th><th>Assignment</th><th /></tr></thead><tbody>
@@ -63,6 +170,17 @@ export function TransactionReview({ rows, master, activeStatus, counts }: { rows
           <td className="row-actions">{row.status === "SKIPPED" ? <><button className="icon-button action-assign" title="Assign" onClick={() => setSelected({ ids: [row.id], direction: row.direction, date: row.date, description: row.description, amount: row.amount, accountHolder: row.accountHolder, accountNumber: row.accountNumber })}><ChevronRight /></button><button className="icon-button" title="Kembalikan" disabled={loadingId === row.id} onClick={() => changeStatus(row, "reopen")}><Undo2 /></button></> : row.status === "MATCHED" ? <><button className="icon-button action-assign" title="Ubah assignment" onClick={() => setSelected({ ids: [row.id], direction: row.direction, date: row.date, description: row.description, amount: row.amount, accountHolder: row.accountHolder, accountNumber: row.accountNumber })}><ChevronRight /></button><span className="verified"><Check /></span></> : <><button className="icon-button action-assign" title="Assign" onClick={() => setSelected({ ids: [row.id], direction: row.direction, date: row.date, description: row.description, amount: row.amount, accountHolder: row.accountHolder, accountNumber: row.accountNumber })}><ChevronRight /></button><button className="icon-button" title="Lewati" disabled={loadingId === row.id} onClick={() => changeStatus(row, "skip")}>{loadingId === row.id ? <LoaderCircle className="spin" /> : <X />}</button></>}</td>
         </tr>)}
       </tbody></table></div> : <div className="empty-state"><span>✓</span><p>Tidak ada transaksi pada bagian ini.</p></div>}
+    </section>
+    <section className="transaction-pagination">
+      <div className="transaction-pagination-meta">
+        <strong>{pagination.totalRows}</strong>
+        <small>transaksi cocok dengan filter ini</small>
+      </div>
+      <div className="transaction-pagination-controls">
+        <button className="button" type="button" disabled={pagination.page <= 1} onClick={() => goToPage(pagination.page - 1)}><ChevronLeft size={16} /> Sebelumnya</button>
+        <span>Halaman {pagination.page} / {pagination.totalPages}</span>
+        <button className="button" type="button" disabled={pagination.page >= pagination.totalPages} onClick={() => goToPage(pagination.page + 1)}>Berikutnya <ChevronRight size={16} /></button>
+      </div>
     </section>
     {selected && <TransactionAssignmentModal target={selected} master={master} onClose={() => setSelected(null)} />}
   </>;

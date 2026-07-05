@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { BarChart3, Building2, FileUp, Landmark, LogOut, Menu, ReceiptText, X } from "lucide-react";
+import { BarChart3, BookOpenText, Building2, FileUp, Landmark, LogOut, Menu, ReceiptText, X } from "lucide-react";
 import { useState } from "react";
 import type { AppRole } from "@/lib/auth";
 
@@ -11,6 +11,7 @@ const links = [
   { href: "/imports", label: "Impor Data", icon: FileUp },
   { href: "/transactions", label: "Transaksi", icon: ReceiptText },
   { href: "/reports", label: "Laporan", icon: Landmark },
+  { href: "/guide", label: "Panduan", icon: BookOpenText },
   { href: "/master", label: "Master Data", icon: Building2, financeOnly: true },
 ];
 
