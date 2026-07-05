@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   Building2,
@@ -105,6 +106,15 @@ export function MasterManager({
   const [editError, setEditError] = useState("");
   const [actionId, setActionId] = useState<string | null>(null);
   const events = ministries.flatMap((ministry) => ministry.events.map((event) => ({ ...event, ministry })));
+
+  useEffect(() => {
+    if (!editing) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [editing]);
 
   const mappingGroups = useMemo(() => ministries.map((ministry) => {
     const rows: MappingRow[] = [{
@@ -471,34 +481,39 @@ export function MasterManager({
       </div>
     </section>
 
-    {editing && <div className="modal-backdrop" onMouseDown={() => setEditing(null)}><div className="modal-card" onMouseDown={(event) => event.stopPropagation()}>
-      <button className="modal-close" onClick={() => setEditing(null)}><X /></button>
-      <div className="eyebrow">EDIT MASTER</div>
-      <h2>
-        {editing.entity === "ministry" ? "Ubah kementerian" :
-          editing.entity === "event" ? "Ubah event" :
-            editing.entity === "income" ? "Ubah mapping pemasukan" :
-              editing.entity === "incomeMaster" ? "Ubah master pemasukan" :
-                "Ubah jenis pengeluaran"}
-      </h2>
-      {editing.entity === "ministry" && <>
-        <label>Kode kementerian<input type="number" min="0" value={editing.code} onChange={(e) => setEditing({ ...editing, code: e.target.value })} /></label>
-        <label>Nama kementerian<input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></label>
-      </>}
-      {editing.entity === "event" && <>
-        <label>Kementerian<select value={editing.ministryId} onChange={(e) => setEditing({ ...editing, ministryId: e.target.value })}><option value="">Pilih kementerian...</option>{ministries.map((row) => <option key={row.id} value={row.id}>{row.code} · {row.name}</option>)}</select></label>
-        <label>Nama event<input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></label>
-        <label>Kategori (opsional)<input value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value })} /></label>
-      </>}
-      {editing.entity === "income" && <>
-        <label>Event<select value={editing.eventId} onChange={(e) => setEditing({ ...editing, eventId: e.target.value })}><option value="">Pilih event...</option>{editEvents.map((row) => <option key={row.id} value={row.id}>{row.ministry.code} · {row.ministry.name} / {row.name}</option>)}</select></label>
-        <label>Master pemasukan<select value={editing.incomeMasterId} onChange={(e) => setEditing({ ...editing, incomeMasterId: e.target.value })}><option value="">Pilih master pemasukan...</option>{incomeMasters.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
-        <label>Kode unik<input inputMode="numeric" maxLength={8} value={editing.uniqueCode} onChange={(e) => setEditing({ ...editing, uniqueCode: e.target.value.replace(/\D/g, "") })} /></label>
-      </>}
-      {editing.entity === "incomeMaster" && <label>Nama master pemasukan<input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></label>}
-      {editing.entity === "expenseType" && <label>Nama jenis pengeluaran<input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></label>}
-      {editError && <div className="form-error">{editError}</div>}
-      <button className="button button-primary button-wide" disabled={editLoading} onClick={() => void saveEdit()}>{editLoading ? <LoaderCircle className="spin" /> : <Pencil />} Simpan perubahan</button>
-    </div></div>}
+    {editing && typeof document !== "undefined" && createPortal(
+      <div className="modal-backdrop" onMouseDown={() => setEditing(null)}>
+        <div className="modal-card modal-card-edit" onMouseDown={(event) => event.stopPropagation()}>
+          <button className="modal-close" onClick={() => setEditing(null)}><X /></button>
+          <div className="eyebrow">EDIT MASTER</div>
+          <h2>
+            {editing.entity === "ministry" ? "Ubah kementerian" :
+              editing.entity === "event" ? "Ubah event" :
+                editing.entity === "income" ? "Ubah mapping pemasukan" :
+                  editing.entity === "incomeMaster" ? "Ubah master pemasukan" :
+                    "Ubah jenis pengeluaran"}
+          </h2>
+          {editing.entity === "ministry" && <>
+            <label>Kode kementerian<input type="number" min="0" value={editing.code} onChange={(e) => setEditing({ ...editing, code: e.target.value })} /></label>
+            <label>Nama kementerian<input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></label>
+          </>}
+          {editing.entity === "event" && <>
+            <label>Kementerian<select value={editing.ministryId} onChange={(e) => setEditing({ ...editing, ministryId: e.target.value })}><option value="">Pilih kementerian...</option>{ministries.map((row) => <option key={row.id} value={row.id}>{row.code} · {row.name}</option>)}</select></label>
+            <label>Nama event<input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></label>
+            <label>Kategori (opsional)<input value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value })} /></label>
+          </>}
+          {editing.entity === "income" && <>
+            <label>Event<select value={editing.eventId} onChange={(e) => setEditing({ ...editing, eventId: e.target.value })}><option value="">Pilih event...</option>{editEvents.map((row) => <option key={row.id} value={row.id}>{row.ministry.code} · {row.ministry.name} / {row.name}</option>)}</select></label>
+            <label>Master pemasukan<select value={editing.incomeMasterId} onChange={(e) => setEditing({ ...editing, incomeMasterId: e.target.value })}><option value="">Pilih master pemasukan...</option>{incomeMasters.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
+            <label>Kode unik<input inputMode="numeric" maxLength={8} value={editing.uniqueCode} onChange={(e) => setEditing({ ...editing, uniqueCode: e.target.value.replace(/\D/g, "") })} /></label>
+          </>}
+          {editing.entity === "incomeMaster" && <label>Nama master pemasukan<input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></label>}
+          {editing.entity === "expenseType" && <label>Nama jenis pengeluaran<input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></label>}
+          {editError && <div className="form-error">{editError}</div>}
+          <button className="button button-primary button-wide" disabled={editLoading} onClick={() => void saveEdit()}>{editLoading ? <LoaderCircle className="spin" /> : <Pencil />} Simpan perubahan</button>
+        </div>
+      </div>,
+      document.body,
+    )}
   </div>;
 }
