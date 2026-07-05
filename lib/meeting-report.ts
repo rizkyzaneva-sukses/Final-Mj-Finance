@@ -24,9 +24,8 @@ export type MeetingAccountRow = {
   staleDays: number | null;
 };
 
-export async function getMeetingReportData(startDate: Date, endDate: Date) {
-  const [reportData, balanceRows, bankPeriodRows, qrisRows, unmatchedCount] = await Promise.all([
-    getReportData(startDate, endDate),
+export async function getBalanceEstimateSummary(endDate: Date) {
+  const [balanceRows, qrisRows] = await Promise.all([
     db.transaction.findMany({
       where: {
         isDraft: false,
@@ -49,14 +48,6 @@ export async function getMeetingReportData(startDate: Date, endDate: Date) {
     db.transaction.findMany({
       where: {
         isDraft: false,
-        source: { in: bankSources },
-        transactionDate: { gte: startDate, lte: endDate },
-      },
-      select: { direction: true, amount: true },
-    }),
-    db.transaction.findMany({
-      where: {
-        isDraft: false,
         status: "MATCHED",
         direction: "IN",
         source: "QRIS_XLSX",
@@ -64,13 +55,6 @@ export async function getMeetingReportData(startDate: Date, endDate: Date) {
       },
       select: { transactionDate: true, amount: true },
       orderBy: { transactionDate: "asc" },
-    }),
-    db.transaction.count({
-      where: {
-        isDraft: false,
-        status: "UNMATCHED",
-        transactionDate: { gte: startDate, lte: endDate },
-      },
     }),
   ]);
 
@@ -108,6 +92,37 @@ export async function getMeetingReportData(startDate: Date, endDate: Date) {
   const qrisPendingFee = roundMoney(accountRows.reduce((sum, row) => sum + row.qrisEstimateFee, 0));
   const qrisPendingNet = roundMoney(accountRows.reduce((sum, row) => sum + row.qrisEstimateNet, 0));
   const estimatedTotal = roundMoney(accountRows.reduce((sum, row) => sum + row.estimatedBalance, 0));
+
+  return {
+    accountRows,
+    confirmedTotal,
+    qrisPendingGross,
+    qrisPendingFee,
+    qrisPendingNet,
+    estimatedTotal,
+  };
+}
+
+export async function getMeetingReportData(startDate: Date, endDate: Date) {
+  const [reportData, balanceSummary, bankPeriodRows, unmatchedCount] = await Promise.all([
+    getReportData(startDate, endDate),
+    getBalanceEstimateSummary(endDate),
+    db.transaction.findMany({
+      where: {
+        isDraft: false,
+        source: { in: bankSources },
+        transactionDate: { gte: startDate, lte: endDate },
+      },
+      select: { direction: true, amount: true },
+    }),
+    db.transaction.count({
+      where: {
+        isDraft: false,
+        status: "UNMATCHED",
+        transactionDate: { gte: startDate, lte: endDate },
+      },
+    }),
+  ]);
   const bankIncome = roundMoney(bankPeriodRows.filter((row) => row.direction === "IN").reduce((sum, row) => sum + Number(row.amount), 0));
   const bankExpense = roundMoney(bankPeriodRows.filter((row) => row.direction === "OUT").reduce((sum, row) => sum + Number(row.amount), 0));
   const eventHighlights = [...reportData.eventRows]
@@ -120,12 +135,7 @@ export async function getMeetingReportData(startDate: Date, endDate: Date) {
     bankExpense,
     bankNet: roundMoney(bankIncome - bankExpense),
     unmatchedCount,
-    accountRows,
-    confirmedTotal,
-    estimatedTotal,
-    qrisPendingGross,
-    qrisPendingFee,
-    qrisPendingNet,
+    ...balanceSummary,
     eventHighlights,
   };
 }

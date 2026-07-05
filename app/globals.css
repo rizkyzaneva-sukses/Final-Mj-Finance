@@ -114,6 +114,12 @@ h1, h2 { font-family: Georgia, "Times New Roman", serif; letter-spacing: -.035em
 .meeting-account-values small { color: var(--muted); font-size: .68rem; }
 .meeting-account-values strong { margin-top: .28rem; font-family: Georgia, serif; font-size: 1.25rem; letter-spacing: -.03em; }
 .meeting-highlight-table { padding: 1rem 1.5rem 0; }
+.dashboard-balance-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.dashboard-account-grid { padding-top: 0; }
+.dashboard-account-grid .meeting-account-card { min-height: 100%; }
+.meeting-summary-panel .panel-title .button, .page-heading-actions .button { min-width: 164px; justify-content: center; }
+.meeting-summary-panel .panel-title { align-items: center; }
+.report-filters .button { min-width: 164px; justify-content: center; }
 
 .meeting-sheet-page { min-height: 100vh; padding: 1.5rem; background: radial-gradient(circle at top right, rgba(220,233,174,.28), transparent 20%), var(--paper); }
 .meeting-sheet-toolbar { width: min(100%, 840px); margin: 0 auto 1rem; display: flex; justify-content: space-between; gap: .75rem; }

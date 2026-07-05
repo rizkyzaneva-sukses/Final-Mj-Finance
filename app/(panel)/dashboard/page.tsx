@@ -1,32 +1,23 @@
 import Link from "next/link";
-import type { TransactionSource } from "@prisma/client";
 import { ArrowDownLeft, ArrowRight, ArrowUpRight, CircleAlert, Sparkles } from "lucide-react";
 import { PageHeading } from "@/components/page-heading";
 import { db } from "@/lib/db";
-import { compactRupiah, dateId, periodBounds, rupiah } from "@/lib/format";
-import { OPENING_BALANCE_PREFIX } from "@/lib/opening-balance";
+import { compactRupiah, dateId, rupiah } from "@/lib/format";
+import { getBalanceEstimateSummary } from "@/lib/meeting-report";
 
 export const dynamic = "force-dynamic";
-const bankSources: TransactionSource[] = ["BANK_PDF", "BANK_SCREENSHOT"];
-const trackedAccounts = [
-  { label: "Muhammad Rizky", matcher: "muhammad rizky" },
-  { label: "Sugiarsa", matcher: "sugiarsa" },
-] as const;
 
 export default async function DashboardPage() {
-  const { startDate, endDate } = periodBounds();
-  const balanceSourceWhere = {
-    OR: [
-      { source: { in: bankSources } },
-      { source: "MANUAL" as const, sourceReference: { startsWith: OPENING_BALANCE_PREFIX } },
-    ],
-  };
-  const [bankMonthIncome, bankMonthExpense, unmatched, recent, byMinistry, bankBalances] = await Promise.all([
-    db.transaction.aggregate({ where: { isDraft: false, source: { in: bankSources }, direction: "IN", transactionDate: { gte: startDate, lte: endDate } }, _sum: { amount: true } }),
-    db.transaction.aggregate({ where: { isDraft: false, source: { in: bankSources }, direction: "OUT", transactionDate: { gte: startDate, lte: endDate } }, _sum: { amount: true } }),
+  const now = new Date();
+  const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  const endDate = now;
+
+  const [bankMonthIncome, bankMonthExpense, unmatched, recent, byMinistry, balanceSummary] = await Promise.all([
+    db.transaction.aggregate({ where: { isDraft: false, source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] }, direction: "IN", transactionDate: { gte: startDate, lte: endDate } }, _sum: { amount: true } }),
+    db.transaction.aggregate({ where: { isDraft: false, source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] }, direction: "OUT", transactionDate: { gte: startDate, lte: endDate } }, _sum: { amount: true } }),
     db.transaction.count({ where: { isDraft: false, status: "UNMATCHED" } }),
     db.transaction.findMany({
-      where: { isDraft: false, source: { in: bankSources } },
+      where: { isDraft: false, source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] } },
       orderBy: [{ transactionDate: "desc" }, { createdAt: "desc" }],
       take: 6,
       include: { event: true, ministry: true },
@@ -35,34 +26,19 @@ export default async function DashboardPage() {
       by: ["ministryId", "direction"],
       where: {
         isDraft: false,
-        source: { in: bankSources },
+        source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] },
         status: "MATCHED",
         transactionDate: { gte: startDate, lte: endDate },
         ministryId: { not: null },
       },
       _sum: { amount: true },
     }),
-    db.transaction.groupBy({
-      by: ["accountHolder", "accountNumber", "direction"],
-      where: { isDraft: false, ...balanceSourceWhere },
-      _sum: { amount: true },
-    }),
+    getBalanceEstimateSummary(endDate),
   ]);
+
   const incomeValue = Number(bankMonthIncome._sum.amount || 0);
   const expenseValue = Number(bankMonthExpense._sum.amount || 0);
-  const normalizedBalances = bankBalances.map((row) => ({
-    holder: String(row.accountHolder || "").trim(),
-    number: String(row.accountNumber || "").trim(),
-    direction: row.direction,
-    amount: Number(row._sum.amount || 0),
-  }));
-  const currentBalance = normalizedBalances.reduce((sum, row) => sum + (row.direction === "IN" ? row.amount : -row.amount), 0);
-  const accountBalances = trackedAccounts.map((account) => {
-    const relevant = normalizedBalances.filter((row) => row.holder.toLocaleLowerCase("id-ID").includes(account.matcher));
-    const balance = relevant.reduce((sum, row) => sum + (row.direction === "IN" ? row.amount : -row.amount), 0);
-    const accountNumber = relevant.find((row) => row.number)?.number || null;
-    return { ...account, balance, accountNumber };
-  });
+  const currentBalance = balanceSummary.confirmedTotal;
   const ministryIds = byMinistry.map((row) => row.ministryId).filter(Boolean) as string[];
   const ministries = await db.ministry.findMany({ where: { id: { in: ministryIds } } });
   const chart = ministries.map((ministry) => ({
@@ -74,23 +50,67 @@ export default async function DashboardPage() {
 
   return (
     <div className="page-stack">
-      <PageHeading eyebrow="PUSAT KENDALI" title="Arus kas, tanpa kabut." description="Saldo rekening dihitung dari mutasi bank. QRIS dipakai sebagai rincian pemasukan, bukan penambah saldo kedua kali." action={<Link className="button button-primary" href="/imports"><Sparkles size={17} /> Impor transaksi</Link>} />
+      <PageHeading
+        eyebrow="PUSAT KENDALI"
+        title="Arus kas, tanpa kabut."
+        description="Saldo rekening dihitung dari mutasi bank. QRIS dipakai sebagai rincian pemasukan, bukan penambah saldo kedua kali."
+        action={<Link className="button button-primary" href="/imports"><Sparkles size={17} /> Impor transaksi</Link>}
+      />
+
       <section className="stats-grid">
         <article className="stat-card stat-income"><div className="stat-icon"><ArrowDownLeft /></div><span>Uang masuk rekening</span><strong>{compactRupiah.format(incomeValue)}</strong><small>Bulan berjalan · mutasi bank</small></article>
         <article className="stat-card stat-expense"><div className="stat-icon"><ArrowUpRight /></div><span>Uang keluar rekening</span><strong>{compactRupiah.format(expenseValue)}</strong><small>Bulan berjalan · mutasi bank</small></article>
         <article className="stat-card stat-balance"><div className="stat-icon">=</div><span>Saldo rekening saat ini</span><strong>{compactRupiah.format(currentBalance)}</strong><small>Akumulasi seluruh mutasi bank final</small></article>
         <article className={`stat-card stat-alert ${unmatched > 0 ? "stat-alert-active" : ""}`}><div className="stat-icon"><CircleAlert /></div><span>Perlu ditinjau</span><strong>{unmatched}</strong><small>Transaksi belum di-assign</small></article>
       </section>
-      <section className="account-balance-grid">
-        {accountBalances.map((account) => (
-          <article className="panel account-balance-card" key={account.label}>
+
+      <section className="meeting-metrics-grid dashboard-balance-summary">
+        <article className="meeting-metric-card">
+          <span>Saldo terkonfirmasi</span>
+          <strong>{rupiah.format(balanceSummary.confirmedTotal)}</strong>
+          <small>Mutasi bank + saldo awal</small>
+        </article>
+        <article className="meeting-metric-card">
+          <span>Estimasi QRIS belum cair</span>
+          <strong className="money-fee">{rupiah.format(balanceSummary.qrisPendingNet)}</strong>
+          <small>Netto setelah potongan 0,7%</small>
+        </article>
+        <article className="meeting-metric-card">
+          <span>Saldo estimasi total</span>
+          <strong>{rupiah.format(balanceSummary.estimatedTotal)}</strong>
+          <small>Dipakai untuk pantauan cepat</small>
+        </article>
+      </section>
+
+      <section className="meeting-account-grid dashboard-account-grid">
+        {balanceSummary.accountRows.map((account) => (
+          <article className="panel meeting-account-card" key={account.label}>
             <div className="eyebrow">SALDO REKENING</div>
-            <h2>{account.label}</h2>
-            <strong>{rupiah.format(account.balance)}</strong>
-            <small>{account.accountNumber ? `Rekening ${account.accountNumber}` : "Nomor rekening belum terbaca di data mutasi."}</small>
+            <h3>{account.label}</h3>
+            <div className="meeting-account-values">
+              <div>
+                <small>Terkonfirmasi</small>
+                <strong>{rupiah.format(account.confirmedBalance)}</strong>
+              </div>
+              <div>
+                <small>Tambah estimasi QRIS</small>
+                <strong className="money-fee">{rupiah.format(account.qrisEstimateNet)}</strong>
+              </div>
+              <div>
+                <small>Saldo estimasi</small>
+                <strong>{rupiah.format(account.estimatedBalance)}</strong>
+              </div>
+            </div>
+            <p>
+              {account.accountNumber ? `Rek. ${account.accountNumber}` : "Nomor rekening belum terbaca di data mutasi."}
+              <br />
+              {account.lastMutationAt ? `Mutasi terakhir ${dateId.format(account.lastMutationAt)}` : "Belum ada mutasi bank"}
+              {account.staleDays !== null ? ` · jeda ${account.staleDays} hari` : ""}
+            </p>
           </article>
         ))}
       </section>
+
       <section className="dashboard-grid">
         <article className="panel chart-panel">
           <div className="panel-title"><div><span className="eyebrow">PER KEMENTERIAN</span><h2>Gerak dana bulan ini</h2></div><div className="chart-legend"><span className="legend-in">Masuk</span><span className="legend-out">Keluar</span></div></div>
