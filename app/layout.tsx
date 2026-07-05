@@ -6,10 +6,23 @@ export const metadata: Metadata = {
   description: "Pusat pencatatan dan laporan keuangan komunitas MUDA JUARA",
 };
 
+const themeScript = `
+(() => {
+  try {
+    const stored = localStorage.getItem("mj-theme");
+    const theme = stored || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    document.documentElement.dataset.theme = theme;
+  } catch {}
+})();
+`;
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="id">
-      <body>{children}</body>
+      <body>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        {children}
+      </body>
     </html>
   );
 }

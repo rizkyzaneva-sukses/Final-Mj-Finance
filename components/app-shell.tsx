@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { BarChart3, BookOpenText, Building2, FileUp, Landmark, LogOut, Menu, ReceiptText, X } from "lucide-react";
+import { BarChart3, BookOpenText, Building2, FileUp, Landmark, LogOut, Menu, MoonStar, ReceiptText, SunMedium, X } from "lucide-react";
 import { useState } from "react";
 import type { AppRole } from "@/lib/auth";
 
@@ -19,6 +19,21 @@ export function AppShell({ role, children }: { role: AppRole; children: React.Re
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    if (typeof document !== "undefined" && document.documentElement.dataset.theme === "dark") {
+      return "dark";
+    }
+    return "light";
+  });
+
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.dataset.theme = next;
+    try {
+      localStorage.setItem("mj-theme", next);
+    } catch {}
+  }
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -44,6 +59,10 @@ export function AppShell({ role, children }: { role: AppRole; children: React.Re
             return <Link key={item.href} href={item.href} className={active ? "active" : ""} onClick={() => setOpen(false)}><Icon size={19} />{item.label}</Link>;
           })}
         </nav>
+        <button className="theme-toggle" onClick={toggleTheme} type="button" aria-label={theme === "dark" ? "Aktifkan mode terang" : "Aktifkan mode gelap"}>
+          {theme === "dark" ? <SunMedium size={18} /> : <MoonStar size={18} />}
+          <span>{theme === "dark" ? "Mode terang" : "Mode gelap"}</span>
+        </button>
         <div className="sidebar-note"><span>Arus kas sehat dimulai dari data yang rapi.</span></div>
         <button className="logout-button" onClick={logout}><LogOut size={18} /> Keluar</button>
       </aside>
