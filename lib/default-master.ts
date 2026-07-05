@@ -3,7 +3,6 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 export const defaultMinistries = [
   [0, "Keuangan"],
   [1, "Kementerian SDM"],
-  [2, "Kementerian Ekonomi"],
   [3, "Kementerian Pendidikan"],
   [4, "Kementerian Sosial"],
   [5, "KemenPorPar"],
