@@ -2,17 +2,21 @@ import Link from "next/link";
 import { ArrowRight, CheckCircle2, Clock3, FileWarning } from "lucide-react";
 import { UploadPanel } from "@/components/upload-panel";
 import { PageHeading } from "@/components/page-heading";
+import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { dateId } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 export default async function ImportsPage() {
-  const batches = await db.importBatch.findMany({ orderBy: { createdAt: "desc" }, take: 12 });
+  const [session, batches] = await Promise.all([
+    getSession(),
+    db.importBatch.findMany({ orderBy: { createdAt: "desc" }, take: 12 }),
+  ]);
   return (
     <div className="page-stack">
       <PageHeading eyebrow="MASUKKAN DATA" title="Dua sumber, satu pembukuan." description="Unggah mutasi BCA dan laporan QRIS. Sistem akan membersihkan, mencocokkan, lalu menyiapkan sisanya untuk ditinjau." />
-      <UploadPanel />
+      <UploadPanel canImportHistorical={session?.role === "FINANCE"} />
       <section className="panel">
         <div className="panel-title"><div><span className="eyebrow">RIWAYAT</span><h2>Impor terakhir</h2></div></div>
         {batches.length ? <div className="batch-list">{batches.map((batch) => <div className="batch-item" key={batch.id}>
