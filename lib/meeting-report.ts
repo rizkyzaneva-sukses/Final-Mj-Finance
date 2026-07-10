@@ -58,8 +58,21 @@ export async function getBalanceEstimateSummary(endDate: Date) {
     }),
   ]);
 
+  const numberToLabel = new Map<string, string>();
+  for (const account of trackedAccounts) {
+    for (const row of balanceRows) {
+      if (row.accountNumber && String(row.accountHolder || "").toLocaleLowerCase("id-ID").includes(account.matcher)) {
+        numberToLabel.set(row.accountNumber, account.label);
+      }
+    }
+  }
+
   const accountRows: MeetingAccountRow[] = trackedAccounts.map((account) => {
-    const relevant = balanceRows.filter((row) => String(row.accountHolder || "").toLocaleLowerCase("id-ID").includes(account.matcher));
+    const relevant = balanceRows.filter((row) => {
+      const matchesByHolder = String(row.accountHolder || "").toLocaleLowerCase("id-ID").includes(account.matcher);
+      const matchesByNumber = row.accountNumber ? numberToLabel.get(row.accountNumber) === account.label : false;
+      return matchesByHolder || matchesByNumber;
+    });
     const confirmedBalance = relevant.reduce((sum, row) => sum + (row.direction === "IN" ? Number(row.amount) : -Number(row.amount)), 0);
     const accountNumber = relevant.find((row) => row.accountNumber)?.accountNumber || null;
     const lastMutationAt = relevant
