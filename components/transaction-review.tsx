@@ -16,6 +16,7 @@ export function TransactionReview({
   master,
   canDelete,
   activeStatus,
+  activeTab,
   counts,
   filters,
   pagination,
@@ -24,6 +25,7 @@ export function TransactionReview({
   master: MasterTree[];
   canDelete: boolean;
   activeStatus: string;
+  activeTab: string;
   counts: Record<string, number>;
   filters: {
     query: string;
@@ -208,6 +210,11 @@ export function TransactionReview({
 
   return <>
     <section className="transaction-toolbar">
+      <div className="source-tabs">
+        <button className={activeTab === "" ? "selected" : ""} onClick={() => { const next = new URLSearchParams(searchParams); next.delete("tab"); pushWith(next); }}>Semua</button>
+        <button className={activeTab === "mutasi" ? "selected" : ""} onClick={() => { const next = new URLSearchParams(searchParams); next.set("tab", "mutasi"); next.delete("page"); pushWith(next); }}>Mutasi</button>
+        <button className={activeTab === "qris" ? "selected" : ""} onClick={() => { const next = new URLSearchParams(searchParams); next.set("tab", "qris"); next.delete("page"); pushWith(next); }}>QRIS</button>
+      </div>
       <div className="status-tabs">
         <button className={activeStatus === "UNMATCHED" ? "selected" : ""} onClick={() => setStatus("UNMATCHED")}>Perlu ditinjau <b className={badgeClass("UNMATCHED")}>{counts.UNMATCHED || 0}</b></button>
         <button className={activeStatus === "MATCHED" ? "selected" : ""} onClick={() => setStatus("MATCHED")}>Sudah cocok <b className={badgeClass("MATCHED")}>{counts.MATCHED || 0}</b></button>

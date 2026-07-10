@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowDownLeft, ArrowRight, ArrowUpRight, CircleAlert, Sparkles } from "lucide-react";
 import { PageHeading } from "@/components/page-heading";
+import { QrisResetButton } from "@/components/qris-reset-button";
 import { db } from "@/lib/db";
 import { compactRupiah, dateId, rupiah } from "@/lib/format";
 import { getBalanceEstimateSummary } from "@/lib/meeting-report";
@@ -94,7 +95,12 @@ export default async function DashboardPage() {
               </div>
               <div>
                 <small>Tambah estimasi QRIS</small>
-                <strong className="money-fee">{rupiah.format(account.qrisEstimateNet)}</strong>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <strong className="money-fee">{rupiah.format(account.qrisEstimateNet)}</strong>
+                  {account.usesQrisEstimate && account.qrisEstimateNet > 0 && (
+                    <QrisResetButton accountNumber={account.accountNumber} accountHolder={account.label} />
+                  )}
+                </div>
               </div>
               <div>
                 <small>Saldo estimasi</small>

@@ -2,6 +2,7 @@ import type { TransactionSource } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getReportData } from "@/lib/reports";
 import { OPENING_BALANCE_PREFIX } from "@/lib/opening-balance";
+import { Prisma } from "@prisma/client";
 
 const bankSources: TransactionSource[] = ["BANK_PDF", "BANK_SCREENSHOT"];
 const QRIS_FEE_RATE = 0.007;
@@ -15,6 +16,7 @@ const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100)
 export type MeetingAccountRow = {
   label: string;
   accountNumber: string | null;
+  usesQrisEstimate: boolean;
   confirmedBalance: number;
   qrisEstimateGross: number;
   qrisEstimateFee: number;
@@ -25,10 +27,11 @@ export type MeetingAccountRow = {
 };
 
 export async function getBalanceEstimateSummary(endDate: Date) {
-  const [balanceRows, qrisRows] = await Promise.all([
+  const [balanceRows, qrisRows, qrisResets] = await Promise.all([
     db.transaction.findMany({
       where: {
         isDraft: false,
+        status: { not: "SKIPPED" },
         transactionDate: { lte: endDate },
         OR: [
           { source: { in: bankSources } },
@@ -55,8 +58,19 @@ export async function getBalanceEstimateSummary(endDate: Date) {
       },
       select: { transactionDate: true, amount: true },
       orderBy: { transactionDate: "asc" },
-    }),
-  ]);
+      }),
+      db.qrisReset.findMany({
+      orderBy: { resetAt: "desc" },
+      }),
+      ]);
+
+      const latestResetByAccount = new Map<string, Date>();
+      for (const reset of qrisResets) {
+      const key = reset.accountNumber || reset.accountHolder || "";
+      if (!latestResetByAccount.has(key)) {
+      latestResetByAccount.set(key, reset.resetAt);
+      }
+      }
 
   const numberToLabel = new Map<string, string>();
   for (const account of trackedAccounts) {
@@ -78,8 +92,13 @@ export async function getBalanceEstimateSummary(endDate: Date) {
     const lastMutationAt = relevant
       .filter((row) => bankSources.includes(row.source))
       .reduce<Date | null>((latest, row) => !latest || row.transactionDate > latest ? row.transactionDate : latest, null);
+    const accountKey = accountNumber || "";
+    const lastResetAt = latestResetByAccount.get(accountKey) || latestResetByAccount.get(account.matcher) || null;
     const pendingQris = account.usesQrisEstimate
-      ? qrisRows.filter((row) => !lastMutationAt || row.transactionDate > lastMutationAt)
+      ? qrisRows.filter((row) => {
+          if (lastResetAt && row.transactionDate <= lastResetAt) return false;
+          return true;
+        })
       : [];
     const qrisEstimateGross = pendingQris.reduce((sum, row) => sum + Number(row.amount), 0);
     const qrisEstimateFee = roundMoney(qrisEstimateGross * QRIS_FEE_RATE);
@@ -90,6 +109,7 @@ export async function getBalanceEstimateSummary(endDate: Date) {
     return {
       label: account.label,
       accountNumber,
+      usesQrisEstimate: account.usesQrisEstimate,
       confirmedBalance: roundMoney(confirmedBalance),
       qrisEstimateGross: roundMoney(qrisEstimateGross),
       qrisEstimateFee,

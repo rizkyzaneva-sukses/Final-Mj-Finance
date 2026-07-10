@@ -10,6 +10,7 @@ const pageSize = 50;
 type Params = Promise<{
   status?: string;
   source?: string;
+  tab?: string;
   q?: string;
   page?: string;
   ministryId?: string;
@@ -38,6 +39,8 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
   const query = String(params.q || "").trim();
   const baseWhere: Prisma.TransactionWhereInput = {
     isDraft: false,
+    ...(params.tab === "mutasi" ? { source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] } } : {}),
+    ...(params.tab === "qris" ? { source: "QRIS_XLSX" } : {}),
     ...(params.source ? { source: params.source as never } : {}),
     ...(params.ministryId ? { ministryId: params.ministryId } : {}),
     ...(params.eventId ? { eventId: params.eventId } : {}),
@@ -180,6 +183,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
         master={master}
         canDelete={session?.role === "FINANCE"}
         activeStatus={status}
+        activeTab={params.tab || ""}
         counts={countMap}
         filters={{
           query,
