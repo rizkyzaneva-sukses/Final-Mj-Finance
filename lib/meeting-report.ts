@@ -31,7 +31,6 @@ export async function getBalanceEstimateSummary(endDate: Date) {
     db.transaction.findMany({
       where: {
         isDraft: false,
-        status: { not: "SKIPPED" },
         transactionDate: { lte: endDate },
         OR: [
           { source: { in: bankSources } },
