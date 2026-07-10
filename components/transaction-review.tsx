@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, ChevronLeft, ChevronRight, LoaderCircle, Search, Trash2, Undo2, X, Layers } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, LoaderCircle, Search, Trash2, Undo2, X, Layers, TriangleAlert } from "lucide-react";
 import { dateId, rupiah } from "@/lib/format";
 import { TransactionAssignmentModal, type AssignmentTarget, type MasterTree } from "@/components/transaction-assignment-modal";
 
@@ -12,42 +12,44 @@ type EventOption = Option & { ministryId: string };
 type IncomeTypeOption = Option & { ministryId: string; eventId: string };
 
 export function TransactionReview({
-  rows,
-  master,
-  canDelete,
-  activeStatus,
-  activeTab,
-  counts,
-  filters,
-  pagination,
+ rows,
+ master,
+ canDelete,
+ activeStatus,
+ activeTab,
+ counts,
+ filters,
+ pagination,
+  duplicateIds,
 }: {
-  rows: Row[];
-  master: MasterTree[];
-  canDelete: boolean;
-  activeStatus: string;
-  activeTab: string;
-  counts: Record<string, number>;
-  filters: {
-    query: string;
-    source: string;
-    ministryId: string;
-    eventId: string;
-    incomeTypeId: string;
-    expenseTypeId: string;
-    account: string;
-    direction: string;
-    ministries: Option[];
-    events: EventOption[];
-    incomeTypes: IncomeTypeOption[];
-    expenseTypes: Option[];
-    accounts: Option[];
-  };
-  pagination: {
-    page: number;
-    pageSize: number;
-    totalRows: number;
-    totalPages: number;
-  };
+ rows: Row[];
+ master: MasterTree[];
+ canDelete: boolean;
+ activeStatus: string;
+ activeTab: string;
+ counts: Record<string, number>;
+ filters: {
+   query: string;
+   source: string;
+   ministryId: string;
+   eventId: string;
+   incomeTypeId: string;
+   expenseTypeId: string;
+   account: string;
+   direction: string;
+   ministries: Option[];
+   events: EventOption[];
+   incomeTypes: IncomeTypeOption[];
+   expenseTypes: Option[];
+   accounts: Option[];
+ };
+ pagination: {
+   page: number;
+   pageSize: number;
+   totalRows: number;
+   totalPages: number;
+ };
+  duplicateIds?: Set<string>;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -208,6 +210,8 @@ export function TransactionReview({
     return "badge-ok";
   }
 
+  const duplicateCount = duplicateIds ? duplicateIds.size : 0;
+
   return <>
     <section className="transaction-toolbar">
       <div className="source-tabs">
@@ -219,6 +223,7 @@ export function TransactionReview({
         <button className={activeStatus === "UNMATCHED" ? "selected" : ""} onClick={() => setStatus("UNMATCHED")}>Perlu ditinjau <b className={badgeClass("UNMATCHED")}>{counts.UNMATCHED || 0}</b></button>
         <button className={activeStatus === "MATCHED" ? "selected" : ""} onClick={() => setStatus("MATCHED")}>Sudah cocok <b className={badgeClass("MATCHED")}>{counts.MATCHED || 0}</b></button>
         <button className={activeStatus === "SKIPPED" ? "selected" : ""} onClick={() => setStatus("SKIPPED")}>Dilewati <b className={badgeClass("SKIPPED")}>{counts.SKIPPED || 0}</b></button>
+        {duplicateCount > 0 && <span className="duplicate-summary-badge"><TriangleAlert size={13} /> {duplicateCount} duplikat</span>}
       </div>
       <form className="search-box" onSubmit={search}><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari deskripsi, event, kementerian, rekening..." /></form>
     </section>
@@ -252,7 +257,7 @@ export function TransactionReview({
       {rows.length ? <div className="responsive-table"><table className="responsive-transaction-table"><thead><tr><th className="checkbox-cell"><input type="checkbox" checked={allVisibleSelected} onChange={toggleSelectAll} title="Pilih semua" /></th><th>Tanggal & sumber</th><th>Rekening</th><th>Deskripsi</th><th>Arah</th><th>Nominal</th><th>Assignment</th><th /></tr></thead><tbody>
         {rows.map((row) => <tr key={row.id} className={selectedIds.has(row.id) ? "row-selected" : ""}>
           <td className="checkbox-cell"><input type="checkbox" checked={selectedIds.has(row.id)} onChange={() => toggleRow(row.id)} /></td>
-          <td data-label="Tanggal & sumber"><strong>{dateId.format(new Date(row.date))}</strong><small>{row.source.replaceAll("_", " ")}</small></td>
+          <td data-label="Tanggal & sumber"><strong>{dateId.format(new Date(row.date))}</strong><small>{row.source.replaceAll("_", " ")}</small>{duplicateIds?.has(row.id) && <span className="duplicate-badge" title="Transaksi ini memiliki pasangan dari sumber berbeda dengan nominal & tanggal yang sama"><TriangleAlert size={13} /> Duplikat</span>}</td>
           <td data-label="Rekening"><strong>{row.accountHolder || "Belum terbaca"}</strong><small>{row.accountNumber || "Tanpa nomor rekening"}</small></td>
           <td className="description-cell" data-label="Deskripsi">{row.description}{row.skipReason && <small>{row.skipReason}</small>}</td>
           <td data-label="Arah"><span className={`direction-pill ${row.direction === "IN" ? "pill-in" : "pill-out"}`}>{row.direction === "IN" ? "Masuk" : "Keluar"}</span></td>

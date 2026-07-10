@@ -2,7 +2,7 @@ import { PageHeading } from "@/components/page-heading";
 import { TransactionReview } from "@/components/transaction-review";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import type { Prisma } from "@prisma/client";
+import type { Prisma, TransactionSource } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 const pageSize = 50;
@@ -149,6 +149,32 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
     accountNumber: row.accountNumber,
   }));
   const master = ministries.map((ministry) => ({ id: ministry.id, code: ministry.code, name: ministry.name, expenseTypes: expenseTypes.map((item) => ({ id: item.id, name: item.name })), events: ministry.events.map((event) => ({ id: event.id, name: event.name, incomeTypes: event.incomeTypes.map((type) => ({ id: type.id, name: type.name, uniqueCode: type.uniqueCode })) })) }));
+
+  // --- Duplicate detection ---
+  // Find all bank transactions (BANK_PDF / BANK_SCREENSHOT) with matching (amount, date, account)
+  // across different sources, then mark them as potential duplicates.
+  const bankTxns = await db.transaction.findMany({
+    where: { isDraft: false, source: { in: ["BANK_PDF", "BANK_SCREENSHOT" as TransactionSource] } },
+    select: { id: true, amount: true, transactionDate: true, accountHolder: true, accountNumber: true, source: true },
+  });
+  const duplicateIds = new Set<string>();
+  const groupMap = new Map<string, { sources: Set<string>; ids: string[] }>();
+  for (const tx of bankTxns) {
+    const dateKey = tx.transactionDate.toISOString().slice(0, 10);
+    const key = `${String(tx.amount)}|${dateKey}|${(tx.accountHolder || "").toLowerCase()}|${(tx.accountNumber || "").toLowerCase()}`;
+    const entry = groupMap.get(key);
+    if (entry) {
+      entry.sources.add(tx.source);
+      entry.ids.push(tx.id);
+    } else {
+      groupMap.set(key, { sources: new Set([tx.source]), ids: [tx.id] });
+    }
+  }
+  for (const entry of groupMap.values()) {
+    if (entry.sources.size > 1) {
+      for (const id of entry.ids) duplicateIds.add(id);
+    }
+  }
   const eventOptions = ministries.flatMap((ministry) =>
     ministry.events.map((event) => ({
       value: event.id,
@@ -206,6 +232,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
           totalRows,
           totalPages,
         }}
+        duplicateIds={duplicateIds.size > 0 ? duplicateIds : undefined}
       />
     </div>
   );
