@@ -17,12 +17,10 @@ export function SiteHeader({ authenticated }: { authenticated: boolean }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
-
-  useEffect(() => {
-    const current = (typeof document !== "undefined" && document.documentElement.dataset.theme) || "light";
-    setTheme(current as "light" | "dark");
-  }, []);
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    if (typeof document !== "undefined" && document.documentElement.dataset.theme === "dark") return "dark";
+    return "light";
+  });
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);

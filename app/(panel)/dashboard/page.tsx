@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, CircleAlert, Sparkles, TriangleAlert, FileText, Camera } from "lucide-react";
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, CircleAlert, Sparkles, TriangleAlert, FileText, Camera } from "lucide-react";
 import { PageHeading } from "@/components/page-heading";
 import { QrisResetButton } from "@/components/qris-reset-button";
 import { ReconciliationTrigger } from "@/components/reconciliation-trigger";
@@ -107,6 +107,7 @@ export default async function DashboardPage() {
       <PageHeading
         eyebrow="PUSAT KENDALI"
         title="Arus kas, tanpa kabut."
+        icon={<BarChart3 size={26} />}
         description="Saldo rekening dihitung dari mutasi bank. QRIS dipakai sebagai rincian pemasukan, bukan penambah saldo kedua kali."
         action={<div style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}><Link className="button button-primary" href="/imports"><Sparkles size={17} /> Impor transaksi</Link><ReconciliationTrigger accounts={balanceSummary.accountRows.map((a) => ({ label: a.label, accountNumber: a.accountNumber, calculatedBalance: a.confirmedBalance }))} /></div>}
       />

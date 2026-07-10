@@ -1,3 +1,4 @@
+import { ReceiptText } from "lucide-react";
 import { PageHeading } from "@/components/page-heading";
 import { TransactionReview } from "@/components/transaction-review";
 import { getSession } from "@/lib/auth";
@@ -203,7 +204,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
 
   return (
     <div className="page-stack">
-      <PageHeading eyebrow="BUKU TRANSAKSI" title="Yang belum jelas, kita bereskan." description="Cocokkan transaksi tanpa kode, tetapkan pengeluaran, atau periksa hasil pencocokan otomatis." />
+      <PageHeading eyebrow="BUKU TRANSAKSI" title="Yang belum jelas, kita bereskan." description="Cocokkan transaksi tanpa kode, tetapkan pengeluaran, atau periksa hasil pencocokan otomatis." icon={<ReceiptText size={26} />} />
       <TransactionReview
         rows={rows}
         master={master}

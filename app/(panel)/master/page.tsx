@@ -1,3 +1,4 @@
+import { Building2 } from "lucide-react";
 import { redirect } from "next/navigation";
 import { MasterManager } from "@/components/master-manager";
 import { PageHeading } from "@/components/page-heading";
@@ -61,5 +62,5 @@ export default async function MasterPage() {
     transactionDate: row.transactionDate.toISOString().slice(0, 10),
     note: typeof row.rawData === "object" && row.rawData && "note" in row.rawData && typeof row.rawData.note === "string" ? row.rawData.note : null,
   }));
-  return <div className="page-stack"><PageHeading eyebrow="KAMUS KEUANGAN" title="Atur kode, lalu biarkan sistem bekerja." description="Setiap jenis pemasukan memiliki kode akhir nominal yang unik. Kode kementerian tidak memakai nol di depan." /><MasterManager ministries={data} incomeMasters={incomeMasters} expenseTypes={expenseTypes} openingBalances={openingBalanceData} /></div>;
+  return <div className="page-stack"><PageHeading eyebrow="KAMUS KEUANGAN" title="Atur kode, lalu biarkan sistem bekerja." description="Setiap jenis pemasukan memiliki kode akhir nominal yang unik. Kode kementerian tidak memakai nol di depan." icon={<Building2 size={26} />} /><MasterManager ministries={data} incomeMasters={incomeMasters} expenseTypes={expenseTypes} openingBalances={openingBalanceData} /></div>;
 }

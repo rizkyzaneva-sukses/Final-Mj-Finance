@@ -1,3 +1,4 @@
+import { BookOpenText } from "lucide-react";
 import { PageHeading } from "@/components/page-heading";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +47,7 @@ export default function GuidePage() {
       <PageHeading
         eyebrow="PANDUAN APLIKASI"
         title="Cara pakai app ini dari awal sampai laporan."
+        icon={<BookOpenText size={26} />}
         description="Panduan ini mengikuti cara kerja app yang sekarang: QRIS untuk rincian pemasukan, mutasi bank untuk arus kas rekening, dan saldo awal untuk posisi uang sebelum pencatatan dimulai."
       />
 

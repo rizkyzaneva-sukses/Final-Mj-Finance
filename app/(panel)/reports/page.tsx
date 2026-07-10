@@ -1,4 +1,4 @@
-import { Download, FileText } from "lucide-react";
+import { Download, FileText, Landmark } from "lucide-react";
 import { PageHeading } from "@/components/page-heading";
 import { ReportFilters } from "@/components/report-filters";
 import { dateId, periodBounds, rupiah } from "@/lib/format";
@@ -25,6 +25,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Para
       <PageHeading
         eyebrow="LAPORAN ARUS KAS"
         title="Angka yang siap diceritakan."
+        icon={<Landmark size={26} />}
         description="Tinjau per kementerian dan event, siapkan ringkasan rapat mingguan, lalu unduh Excel atau lembar F4 siap simpan PDF."
         action={(
           <div className="page-heading-actions">

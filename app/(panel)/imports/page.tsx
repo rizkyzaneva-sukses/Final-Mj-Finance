@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, CheckCircle2, Clock3, FileWarning } from "lucide-react";
+import { ArrowRight, CheckCircle2, Clock3, FileUp, FileWarning } from "lucide-react";
 import { UploadPanel } from "@/components/upload-panel";
 import { PageHeading } from "@/components/page-heading";
 import { getSession } from "@/lib/auth";
@@ -15,7 +15,7 @@ export default async function ImportsPage() {
   ]);
   return (
     <div className="page-stack">
-      <PageHeading eyebrow="MASUKKAN DATA" title="Dua sumber, satu pembukuan." description="Unggah mutasi BCA dan laporan QRIS. Sistem akan membersihkan, mencocokkan, lalu menyiapkan sisanya untuk ditinjau." />
+      <PageHeading eyebrow="MASUKKAN DATA" title="Dua sumber, satu pembukuan." description="Unggah mutasi BCA dan laporan QRIS. Sistem akan membersihkan, mencocokkan, lalu menyiapkan sisanya untuk ditinjau." icon={<FileUp size={26} />} />
       <UploadPanel canImportHistorical={session?.role === "FINANCE"} />
       <section className="panel">
         <div className="panel-title"><div><span className="eyebrow">RIWAYAT</span><h2>Impor terakhir</h2></div></div>
