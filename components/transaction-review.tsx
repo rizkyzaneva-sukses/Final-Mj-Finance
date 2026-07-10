@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, ChevronLeft, ChevronRight, LoaderCircle, Search, Undo2, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, LoaderCircle, Search, Undo2, X, Layers } from "lucide-react";
 import { dateId, rupiah } from "@/lib/format";
 import { TransactionAssignmentModal, type AssignmentTarget, type MasterTree } from "@/components/transaction-assignment-modal";
 
@@ -50,6 +50,8 @@ export function TransactionReview({
   const [selected, setSelected] = useState<AssignmentTarget | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [query, setQuery] = useState(filters.query);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
   const [form, setForm] = useState({
     ministryId: filters.ministryId,
     eventId: filters.eventId,
@@ -128,6 +130,65 @@ export function TransactionReview({
     router.refresh();
   }
 
+  const allVisibleSelected = rows.length > 0 && rows.every((row) => selectedIds.has(row.id));
+  const hasSelection = selectedIds.size > 0;
+  const selectedRows = useMemo(() => rows.filter((row) => selectedIds.has(row.id)), [rows, selectedIds]);
+  const selectedDirection = selectedRows.length > 0 ? selectedRows[0].direction : null;
+  const directionConflict = selectedRows.some((row) => row.direction !== selectedDirection);
+
+  function toggleSelectAll() {
+    if (allVisibleSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        rows.forEach((row) => next.delete(row.id));
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        rows.forEach((row) => next.add(row.id));
+        return next;
+      });
+    }
+  }
+
+  function toggleRow(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function openBulkAssign() {
+    if (!hasSelection || directionConflict) return;
+    const firstRow = selectedRows[0];
+    setSelected({
+      ids: Array.from(selectedIds),
+      direction: firstRow.direction,
+      date: firstRow.date,
+      description: `[${selectedIds.size} transaksi]`,
+      amount: selectedRows.reduce((sum, r) => sum + r.amount, 0),
+      accountHolder: null,
+      accountNumber: null,
+    });
+  }
+
+  async function bulkSkip() {
+    if (!hasSelection) return;
+    setBulkLoading(true);
+    const response = await fetch("/api/transactions/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: Array.from(selectedIds), action: "skip" }),
+    });
+    if (!response.ok) alert((await response.json()).error || "Gagal melewati transaksi.");
+    setSelectedIds(new Set());
+    setBulkLoading(false);
+    router.refresh();
+  }
+
   function badgeClass(status: "UNMATCHED" | "MATCHED" | "SKIPPED") {
     if (status === "UNMATCHED") return "badge-warning";
     if (status === "SKIPPED") return "badge-muted";
@@ -158,9 +219,21 @@ export function TransactionReview({
         </div>
       </form>
     </section>
+    {hasSelection && <section className="panel bulk-toolbar">
+      <div className="bulk-info">
+        <strong>{selectedIds.size} transaksi dipilih</strong>
+        {directionConflict && <small className="muted">⚠ Arah transaksi berbeda — pilih yang sama untuk assign</small>}
+      </div>
+      <div className="bulk-actions">
+        <button className="button button-primary" disabled={directionConflict || bulkLoading} onClick={openBulkAssign}><Layers size={16} /> Assign sekaligus</button>
+        <button className="button" disabled={bulkLoading} onClick={bulkSkip}>Lewati semua</button>
+        <button className="button" onClick={() => setSelectedIds(new Set())}>Batal pilih</button>
+      </div>
+    </section>}
     <section className="panel table-panel">
-      {rows.length ? <div className="responsive-table"><table className="responsive-transaction-table"><thead><tr><th>Tanggal & sumber</th><th>Rekening</th><th>Deskripsi</th><th>Arah</th><th>Nominal</th><th>Assignment</th><th /></tr></thead><tbody>
-        {rows.map((row) => <tr key={row.id}>
+      {rows.length ? <div className="responsive-table"><table className="responsive-transaction-table"><thead><tr><th className="checkbox-cell"><input type="checkbox" checked={allVisibleSelected} onChange={toggleSelectAll} title="Pilih semua" /></th><th>Tanggal & sumber</th><th>Rekening</th><th>Deskripsi</th><th>Arah</th><th>Nominal</th><th>Assignment</th><th /></tr></thead><tbody>
+        {rows.map((row) => <tr key={row.id} className={selectedIds.has(row.id) ? "row-selected" : ""}>
+          <td className="checkbox-cell"><input type="checkbox" checked={selectedIds.has(row.id)} onChange={() => toggleRow(row.id)} /></td>
           <td data-label="Tanggal & sumber"><strong>{dateId.format(new Date(row.date))}</strong><small>{row.source.replaceAll("_", " ")}</small></td>
           <td data-label="Rekening"><strong>{row.accountHolder || "Belum terbaca"}</strong><small>{row.accountNumber || "Tanpa nomor rekening"}</small></td>
           <td className="description-cell" data-label="Deskripsi">{row.description}{row.skipReason && <small>{row.skipReason}</small>}</td>
