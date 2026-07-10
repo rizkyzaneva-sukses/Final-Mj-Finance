@@ -9,10 +9,10 @@ const parsedSchema = z.object({
   accountNumber: z.string().trim().min(1).nullable().optional(),
   transactions: z.array(
     z.object({
-      date: z.string(),
-      description: z.string().min(1),
-      amount: z.number().positive(),
-      direction: z.enum(["IN", "OUT"]),
+      date: z.string().nullable().optional(),
+      description: z.string().nullable().optional(),
+      amount: z.number().nullable().optional(),
+      direction: z.enum(["IN", "OUT"]).nullable().optional(),
       reference: z.string().nullable().optional(),
     }),
   ),
@@ -65,7 +65,7 @@ export async function parseBankFile(buffer: Buffer, mimeType: string): Promise<{
     throw new Error("Impor screenshot memerlukan model mimo-v2.5 yang mendukung gambar.");
   }
 
-  const instruction = `Anda adalah parser mutasi rekening BCA Indonesia. Ekstrak nama pemilik rekening, nomor rekening, dan setiap transaksi tanpa saldo awal/akhir. Kembalikan JSON murni berbentuk {"accountHolder":"Nama Pemilik atau null","accountNumber":"Nomor rekening atau null","transactions":[{"date":"YYYY-MM-DD","description":"teks lengkap","amount":100000,"direction":"IN|OUT","reference":null}]}. Tanda (+), CR, atau kredit berarti IN; tanda (-), DB, atau debit berarti OUT. Nominal adalah angka rupiah tanpa pemisah. Pertahankan deskripsi TRF BATCH MYBB - PEMBAYARAN secara utuh.`;
+  const instruction = `Anda adalah parser mutasi rekening BCA Indonesia. Ekstrak nama pemilik rekening, nomor rekening, dan setiap transaksi tanpa saldo awal/akhir. Kembalikan JSON murni berbentuk {"accountHolder":"Nama Pemilik atau null","accountNumber":"Nomor rekening atau null","transactions":[{"date":"YYYY-MM-DD","description":"teks lengkap","amount":100000,"direction":"IN|OUT","reference":null}]}. Tanda (+), CR, atau kredit berarti IN; tanda (-), DB, atau debit berarti OUT. Nominal adalah angka rupiah tanpa pemisah. Pertahankan deskripsi TRF BATCH MYBB - PEMBAYARAN secara utuh. Jangan sertakan baris saldo awal, saldo akhir, ringkasan, atau header tabel sebagai transaksi. Jika sebuah baris transaksi tidak bisa dibaca lengkap (tanggal, deskripsi, nominal, dan arah IN/OUT wajib semuanya terisi), lewati baris itu sepenuhnya alih-alih mengisi null.`;
   const content: Array<Record<string, unknown>> = [{ type: "text", text: instruction }];
   let pdfAccount = { accountHolder: null as string | null, accountNumber: null as string | null };
 
@@ -107,10 +107,18 @@ export async function parseBankFile(buffer: Buffer, mimeType: string): Promise<{
   const accountHolder = pdfAccount.accountHolder || parsed.accountHolder?.trim() || null;
   const accountNumber = pdfAccount.accountNumber || cleanAccountNumber(parsed.accountNumber);
 
+  const validRows = parsed.transactions.filter(
+    (row): row is { date: string; description: string; amount: number; direction: "IN" | "OUT"; reference?: string | null } =>
+      typeof row.date === "string" && row.date.trim().length > 0 &&
+      typeof row.description === "string" && row.description.trim().length > 0 &&
+      typeof row.amount === "number" && Number.isFinite(row.amount) && row.amount > 0 &&
+      (row.direction === "IN" || row.direction === "OUT"),
+  );
+
   return {
     accountHolder,
     accountNumber,
-    transactions: parsed.transactions.map((row) => ({
+    transactions: validRows.map((row) => ({
       transactionDate: new Date(`${row.date}T12:00:00+07:00`),
       description: row.description,
       amount: row.amount,
