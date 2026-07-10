@@ -18,9 +18,7 @@ export type NormalizedTransaction = {
 
 export function fingerprint(transaction: NormalizedTransaction) {
   const stable = [
-    transaction.source,
     transaction.accountNumber || "",
-    transaction.accountHolder?.trim().toUpperCase() || "",
     transaction.sourceReference || "",
     transaction.transactionDate.toISOString(),
     transaction.description.trim().toUpperCase(),

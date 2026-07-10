@@ -33,3 +33,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
   return NextResponse.json({ ok: true });
 }
+
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "Sesi berakhir." }, { status: 401 });
+  if (session.role !== "FINANCE") return NextResponse.json({ error: "Hanya Menteri Keuangan yang dapat menghapus transaksi." }, { status: 403 });
+  const { id } = await params;
+  const transaction = await db.transaction.findUnique({ where: { id } });
+  if (!transaction) return NextResponse.json({ error: "Transaksi tidak ditemukan." }, { status: 404 });
+
+  await db.transaction.delete({ where: { id } });
+  return NextResponse.json({ ok: true });
+}

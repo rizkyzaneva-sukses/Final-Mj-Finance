@@ -1,5 +1,6 @@
 import { PageHeading } from "@/components/page-heading";
 import { TransactionReview } from "@/components/transaction-review";
+import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
 
@@ -28,6 +29,7 @@ function decodeAccountKey(value: string) {
 }
 
 export default async function TransactionsPage({ searchParams }: { searchParams: Params }) {
+  const session = await getSession();
   const params = await searchParams;
   const statuses = ["UNMATCHED", "MATCHED", "SKIPPED"] as const;
   const status = statuses.includes(params.status as (typeof statuses)[number]) ? params.status as (typeof statuses)[number] : "UNMATCHED";
@@ -176,6 +178,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
       <TransactionReview
         rows={rows}
         master={master}
+        canDelete={session?.role === "FINANCE"}
         activeStatus={status}
         counts={countMap}
         filters={{

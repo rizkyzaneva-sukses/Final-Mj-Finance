@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, ChevronLeft, ChevronRight, LoaderCircle, Search, Undo2, X, Layers } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, LoaderCircle, Search, Trash2, Undo2, X, Layers } from "lucide-react";
 import { dateId, rupiah } from "@/lib/format";
 import { TransactionAssignmentModal, type AssignmentTarget, type MasterTree } from "@/components/transaction-assignment-modal";
 
@@ -14,6 +14,7 @@ type IncomeTypeOption = Option & { ministryId: string; eventId: string };
 export function TransactionReview({
   rows,
   master,
+  canDelete,
   activeStatus,
   counts,
   filters,
@@ -21,6 +22,7 @@ export function TransactionReview({
 }: {
   rows: Row[];
   master: MasterTree[];
+  canDelete: boolean;
   activeStatus: string;
   counts: Record<string, number>;
   filters: {
@@ -126,6 +128,15 @@ export function TransactionReview({
     setLoadingId(row.id);
     const response = await fetch(`/api/transactions/${row.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
     if (!response.ok) alert((await response.json()).error || "Perubahan gagal.");
+    setLoadingId(null);
+    router.refresh();
+  }
+
+  async function deleteRow(row: Row) {
+    if (!confirm(`Hapus transaksi ini secara permanen?\n\n${dateId.format(new Date(row.date))} · ${row.description} · ${rupiah.format(row.amount)}\n\nTindakan ini tidak bisa dibatalkan.`)) return;
+    setLoadingId(row.id);
+    const response = await fetch(`/api/transactions/${row.id}`, { method: "DELETE" });
+    if (!response.ok) alert((await response.json()).error || "Gagal menghapus transaksi.");
     setLoadingId(null);
     router.refresh();
   }
@@ -240,7 +251,7 @@ export function TransactionReview({
           <td data-label="Arah"><span className={`direction-pill ${row.direction === "IN" ? "pill-in" : "pill-out"}`}>{row.direction === "IN" ? "Masuk" : "Keluar"}</span></td>
           <td className={row.direction === "IN" ? "money-in" : "money-out"} data-label="Nominal"><strong>{rupiah.format(row.amount)}</strong></td>
           <td data-label="Assignment">{row.event ? <div className="assignment-summary"><strong>{row.event}</strong><small>{row.ministry}{row.incomeType ? ` · ${row.incomeType}` : row.expenseType ? ` · ${row.expenseType}` : ""}</small></div> : <span className="muted">Belum di-assign</span>}</td>
-          <td className="row-actions" data-label="Aksi">{row.status === "SKIPPED" ? <><button className="icon-button action-assign" title="Assign" onClick={() => setSelected({ ids: [row.id], direction: row.direction, date: row.date, description: row.description, amount: row.amount, accountHolder: row.accountHolder, accountNumber: row.accountNumber })}><ChevronRight /></button><button className="icon-button" title="Kembalikan" disabled={loadingId === row.id} onClick={() => changeStatus(row, "reopen")}><Undo2 /></button></> : row.status === "MATCHED" ? <><button className="icon-button action-assign" title="Ubah assignment" onClick={() => setSelected({ ids: [row.id], direction: row.direction, date: row.date, description: row.description, amount: row.amount, accountHolder: row.accountHolder, accountNumber: row.accountNumber })}><ChevronRight /></button><span className="verified"><Check /></span></> : <><button className="icon-button action-assign" title="Assign" onClick={() => setSelected({ ids: [row.id], direction: row.direction, date: row.date, description: row.description, amount: row.amount, accountHolder: row.accountHolder, accountNumber: row.accountNumber })}><ChevronRight /></button><button className="icon-button" title="Lewati" disabled={loadingId === row.id} onClick={() => changeStatus(row, "skip")}>{loadingId === row.id ? <LoaderCircle className="spin" /> : <X />}</button></>}</td>
+          <td className="row-actions" data-label="Aksi">{row.status === "SKIPPED" ? <><button className="icon-button action-assign" title="Assign" onClick={() => setSelected({ ids: [row.id], direction: row.direction, date: row.date, description: row.description, amount: row.amount, accountHolder: row.accountHolder, accountNumber: row.accountNumber })}><ChevronRight /></button><button className="icon-button" title="Kembalikan" disabled={loadingId === row.id} onClick={() => changeStatus(row, "reopen")}><Undo2 /></button></> : row.status === "MATCHED" ? <><button className="icon-button action-assign" title="Ubah assignment" onClick={() => setSelected({ ids: [row.id], direction: row.direction, date: row.date, description: row.description, amount: row.amount, accountHolder: row.accountHolder, accountNumber: row.accountNumber })}><ChevronRight /></button><span className="verified"><Check /></span></> : <><button className="icon-button action-assign" title="Assign" onClick={() => setSelected({ ids: [row.id], direction: row.direction, date: row.date, description: row.description, amount: row.amount, accountHolder: row.accountHolder, accountNumber: row.accountNumber })}><ChevronRight /></button><button className="icon-button" title="Lewati" disabled={loadingId === row.id} onClick={() => changeStatus(row, "skip")}>{loadingId === row.id ? <LoaderCircle className="spin" /> : <X />}</button></>}{canDelete && <button className="icon-button icon-button-danger" title="Hapus permanen" disabled={loadingId === row.id} onClick={() => deleteRow(row)}><Trash2 /></button>}</td>
         </tr>)}
       </tbody></table></div> : <div className="empty-state"><span>✓</span><p>Tidak ada transaksi pada bagian ini.</p></div>}
     </section>

@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "db:recompute-fingerprints": "tsx scripts/recompute-fingerprints.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
