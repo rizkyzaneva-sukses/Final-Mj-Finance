@@ -103,7 +103,15 @@ export async function parseBankFile(buffer: Buffer, mimeType: string): Promise<{
   const payload = await response.json();
   const text = payload?.choices?.[0]?.message?.content;
   if (typeof text !== "string") throw new Error("Respons MiMo tidak berisi hasil parser.");
-  const parsed = parsedSchema.parse(JSON.parse(cleanJson(text)));
+  const raw = JSON.parse(cleanJson(text));
+  if (raw.transactions && Array.isArray(raw.transactions)) {
+    raw.transactions = raw.transactions.filter(
+      (t: Record<string, unknown>) =>
+        typeof t.amount === "number" && t.amount > 0 &&
+        (t.direction === "IN" || t.direction === "OUT"),
+    );
+  }
+  const parsed = parsedSchema.parse(raw);
   const accountHolder = pdfAccount.accountHolder || parsed.accountHolder?.trim() || null;
   const accountNumber = pdfAccount.accountNumber || cleanAccountNumber(parsed.accountNumber);
 
