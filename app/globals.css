@@ -290,6 +290,22 @@ h1, h2 { font-family: Georgia, "Times New Roman", serif; letter-spacing: -.035em
   .stats-grid { grid-template-columns: 1fr 1fr; }.stat-card { min-height: 145px; }.stat-card strong { font-size: 1.5rem; }.stat-icon { width: 31px; height: 31px; }.bar-row { grid-template-columns: 105px 1fr; }.upload-tabs button { padding: .7rem; }.upload-tabs button > svg { display: none; }.status-tabs button { white-space: nowrap; }.modal-card { padding: 1.4rem; }.page-heading .button { width: 100%; }.report-summary div { align-items: flex-start; flex-direction: column; gap: .4rem; }.import-preview-stats { grid-template-columns: 1fr; }.responsive-master-table .master-row td, .responsive-transaction-table td, .responsive-import-table td, .responsive-report-table td { padding-left: 6.15rem; }
 }
 
+/* The F4 page (210mm wide, ~794px) is narrower than the 800px/1100px mobile
+   breakpoints above, so printing was silently triggering the mobile
+   single-column layout. Force the desktop layout back on for print. */
+@media print {
+  .meeting-sheet-page { padding: 0 !important; }
+  .meeting-sheet-paper { width: 210mm !important; min-height: 330mm !important; padding: 10mm !important; }
+  .meeting-sheet-header { flex-direction: row !important; }
+  .meeting-sheet-account-head { flex-direction: row !important; align-items: baseline !important; }
+  .meeting-sheet-meta { min-width: 210px !important; text-align: right !important; }
+  .meeting-sheet-grid-four, .meeting-sheet-stat-list, .meeting-sheet-account-values { grid-template-columns: unset !important; }
+  .meeting-sheet-grid-four { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+  .meeting-sheet-two-col { grid-template-columns: 1.15fr .85fr !important; }
+  .meeting-sheet-account-values { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+  .meeting-sheet-stat-list { grid-template-columns: 1fr 1fr !important; }
+}
+
 /* ===== Panel polish ===== */
 .panel { transition: transform .2s ease, box-shadow .2s ease; }
 .panel:hover { transform: translateY(-2px); }
