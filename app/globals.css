@@ -234,6 +234,7 @@ h1, h2 { font-family: Georgia, "Times New Roman", serif; letter-spacing: -.035em
   .meeting-sheet-page { padding: 0; min-height: 0; background: #fff !important; }
   .meeting-sheet-toolbar, .mobile-menu, .sidebar, .nav-scrim { display: none !important; }
   .meeting-sheet-paper { width: 210mm; min-height: 330mm; margin: 0; padding: 10mm; box-sizing: border-box; box-shadow: none; }
+  .meeting-sheet-paper, .meeting-sheet-paper * { background: #fff !important; background-image: none !important; }
 }
 
 @media (max-width: 1100px) {
