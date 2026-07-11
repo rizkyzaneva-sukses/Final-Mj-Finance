@@ -19,7 +19,8 @@ import {
 } from "lucide-react";
 
 type IncomeType = { id: string; name: string; uniqueCode: string | null; incomeMasterId: string | null; incomeMasterName: string; active: boolean; eventId: string };
-type Event = { id: string; name: string; category: string | null; active: boolean; ministryId: string; incomeTypes: IncomeType[] };
+type EventDoc = { id: string; fileName: string; mimeType: string; size: number; note: string | null; uploadedAt: string; uploadedByRole: string | null };
+type Event = { id: string; name: string; category: string | null; active: boolean; ministryId: string; documentCount: number; incomeTypes: IncomeType[] };
 type Ministry = { id: string; code: number; name: string; active: boolean; events: Event[] };
 type IncomeMaster = { id: string; name: string; active: boolean };
 type ExpenseType = { id: string; name: string; active: boolean };
@@ -54,6 +55,7 @@ type MappingRow =
       eventId: string;
       eventName: string;
       category: string | null;
+      documentCount: number;
       incomeMappingId: null;
       incomeMasterId: null;
       incomeMasterName: null;
@@ -115,6 +117,12 @@ export function MasterManager({
   const [openingForm, setOpeningForm] = useState<Record<string, string>>({});
   const [openingLoading, setOpeningLoading] = useState(false);
   const [openingError, setOpeningError] = useState("");
+  const [eventDocs, setEventDocs] = useState<EventDoc[]>([]);
+  const [docLoading, setDocLoading] = useState(false);
+  const [docError, setDocError] = useState("");
+  const [docFiles, setDocFiles] = useState<File[]>([]);
+  const [docNote, setDocNote] = useState("");
+  const [docUploading, setDocUploading] = useState(false);
   const events = ministries.flatMap((ministry) => ministry.events.map((event) => ({ ...event, ministry })));
 
   useEffect(() => {
@@ -155,6 +163,7 @@ export function MasterManager({
         eventId: event.id,
         eventName: event.name,
         category: event.category,
+        documentCount: event.documentCount,
         incomeMappingId: null,
         incomeMasterId: null,
         incomeMasterName: null,
@@ -293,6 +302,7 @@ export function MasterManager({
     }
     if ("entity" in row && row.entity === "event") {
       setEditing({ entity: "event", id: row.id, ministryId: row.ministryId, name: row.eventName || "", category: row.category || "" });
+      void loadEventDocs(row.id);
       return;
     }
     if ("entity" in row && row.entity === "income") {
@@ -362,6 +372,54 @@ export function MasterManager({
     const body = await response.json().catch(() => ({}));
     if (!response.ok) alert(body.error || "Data gagal dihapus.");
     setActionId(null);
+    router.refresh();
+  }
+
+  async function loadEventDocs(eventId: string) {
+    setDocLoading(true);
+    setDocError("");
+    const response = await fetch(`/api/events/${eventId}/documents`);
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setDocError(body.error || "Dokumen gagal dimuat.");
+      setEventDocs([]);
+    } else {
+      setEventDocs(body.documents || []);
+    }
+    setDocLoading(false);
+  }
+
+  async function uploadDoc(eventId: string) {
+    if (!docFiles.length) return;
+    setDocUploading(true);
+    setDocError("");
+    const data = new FormData();
+    docFiles.forEach((file) => data.append("file", file));
+    data.set("note", docNote);
+    const response = await fetch(`/api/events/${eventId}/documents`, { method: "POST", body: data });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setDocError(body.error || "Dokumen gagal diunggah.");
+      setDocUploading(false);
+      return;
+    }
+    setDocFiles([]);
+    setDocNote("");
+    setDocUploading(false);
+    await loadEventDocs(eventId);
+    router.refresh();
+  }
+
+  async function deleteDoc(eventId: string, docId: string, label: string) {
+    if (!window.confirm(`Hapus dokumen "${label}"?`)) return;
+    setDocError("");
+    const response = await fetch(`/api/events/${eventId}/documents/${docId}`, { method: "DELETE" });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setDocError(body.error || "Dokumen gagal dihapus.");
+      return;
+    }
+    await loadEventDocs(eventId);
     router.refresh();
   }
 
@@ -487,6 +545,7 @@ export function MasterManager({
                   </td>
                   <td data-label="Catatan">
                     <span className={`status-pill tone-${note.tone}`} title={note.title}>{note.short}</span>
+                    {row.entity === "event" && row.documentCount > 0 && <span className="status-pill tone-count doc-count" title={`${row.documentCount} dokumen bukti`}><ReceiptText size={12} /> {row.documentCount}</span>}
                   </td>
                   <td className="row-actions" data-label="Aksi">
                     <button className="icon-button" title="Edit" onClick={() => startEdit(row)}><Pencil /></button>
@@ -601,6 +660,43 @@ export function MasterManager({
             <label>Kementerian<select value={editing.ministryId} onChange={(e) => setEditing({ ...editing, ministryId: e.target.value })}><option value="">Pilih kementerian...</option>{ministries.map((row) => <option key={row.id} value={row.id}>{row.code} · {row.name}</option>)}</select></label>
             <label>Nama event<input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></label>
             <label>Kategori (opsional)<input value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value })} /></label>
+
+            <div className="doc-manager">
+              <div className="doc-manager-head">
+                <span className="eyebrow">DOKUMENTASI STRUK</span>
+                <small>Bukti &amp; dokumen pendukung event ini</small>
+              </div>
+              {docLoading ? (
+                <p className="doc-loading">Memuat dokumen…</p>
+              ) : (
+                <ul className="doc-list">
+                  {eventDocs.length ? eventDocs.map((doc) => (
+                    <li key={doc.id} className="doc-item">
+                      <a className="doc-preview" href={`/api/events/${editing.id}/documents/${doc.id}/file`} target="_blank" rel="noreferrer">
+                        {doc.mimeType.startsWith("image/") ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={`/api/events/${editing.id}/documents/${doc.id}/file`} alt={doc.fileName} />
+                        ) : <span className="doc-file-icon">PDF</span>}
+                        <span className="doc-meta">
+                          <strong>{doc.fileName}</strong>
+                          <small>{(doc.size / 1024).toFixed(0)} KB{doc.note ? ` · ${doc.note}` : ""}</small>
+                        </span>
+                      </a>
+                      <button type="button" className="icon-button" title="Hapus dokumen" onClick={() => void deleteDoc(editing.id, doc.id, doc.fileName)}><Trash2 /></button>
+                    </li>
+                  )) : <li className="doc-empty">Belum ada dokumen bukti.</li>}
+                </ul>
+              )}
+              {docError && <div className="form-error">{docError}</div>}
+              <div className="doc-upload">
+                <label className="doc-file-label">
+                  <input type="file" accept=".jpg,.jpeg,.png,.webp,.gif,.pdf" multiple onChange={(e) => setDocFiles(Array.from(e.target.files || []))} hidden />
+                  <span>{docFiles.length ? `${docFiles.length} berkas dipilih` : "Pilih gambar atau PDF (maks 10 MB)"}</span>
+                </label>
+                <input className="doc-note" value={docNote} onChange={(e) => setDocNote(e.target.value)} placeholder="Keterangan struk (opsional)" />
+                <button type="button" className="button button-primary" disabled={!docFiles.length || docUploading} onClick={() => void uploadDoc(editing.id)}>{docUploading ? <LoaderCircle className="spin" /> : <Plus />} Unggah</button>
+              </div>
+            </div>
           </>}
           {editing.entity === "income" && <>
             <label>Event<select value={editing.eventId} onChange={(e) => setEditing({ ...editing, eventId: e.target.value })}><option value="">Pilih event...</option>{editEvents.map((row) => <option key={row.id} value={row.id}>{row.ministry.code} · {row.ministry.name} / {row.name}</option>)}</select></label>

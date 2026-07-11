@@ -124,6 +124,26 @@ h1, h2 { font-family: Georgia, "Times New Roman", serif; letter-spacing: -.035em
 
 /* Duplicate badge */
 .duplicate-badge { display: inline-flex; align-items: center; gap: .25rem; margin-top: .3rem; padding: .15rem .45rem; color: #b43e23; background: #fde1d8; border-radius: 999px; font-size: .6rem; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; }
+.doc-count { margin-left: .4rem; color: var(--forest-2); border: 1px solid rgba(31,91,78,.16); background: rgba(220,233,174,.3); padding: .15rem .45rem; gap: .2rem; }
+.doc-count svg { width: 12px; height: 12px; }
+
+/* Event document manager */
+.doc-manager { display: grid; gap: .8rem; padding: 1rem; border: 1px solid rgba(31,91,78,.16); border-radius: 16px; background: rgba(220,233,174,.12); }
+.doc-manager-head { display: flex; flex-direction: column; gap: .15rem; }
+.doc-manager-head small { color: var(--muted); font-size: .68rem; }
+.doc-loading, .doc-empty { margin: 0; color: var(--muted); font-size: .76rem; }
+.doc-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+.doc-item { display: flex; align-items: center; gap: .6rem; padding: .5rem; background: white; border: 1px solid var(--line); border-radius: 12px; }
+.doc-preview { display: flex; align-items: center; gap: .7rem; flex: 1; min-width: 0; text-decoration: none; color: inherit; }
+.doc-preview img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; flex: none; background: var(--paper); }
+.doc-file-icon { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 8px; background: var(--paper); color: #b43e23; font-size: .6rem; font-weight: 800; flex: none; }
+.doc-meta { display: flex; flex-direction: column; min-width: 0; }
+.doc-meta strong { font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-meta small { color: var(--muted); font-size: .66rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-upload { display: grid; grid-template-columns: 1fr auto; gap: .5rem; align-items: center; }
+.doc-file-label { grid-column: 1 / -1; padding: .65rem .8rem; display: block; text-align: center; color: var(--muted); background: var(--paper); border: 1px dashed var(--line); border-radius: 10px; cursor: pointer; font-size: .72rem; }
+.doc-note { padding: .6rem .7rem; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 10px; font-size: .76rem; }
+.doc-upload .button { grid-column: 1 / -1; }
 .duplicate-summary-badge { display: inline-flex; align-items: center; gap: .3rem; margin-left: .5rem; padding: .3rem .6rem; color: #fff; background: var(--orange); border-radius: 999px; font-size: .68rem; font-weight: 800; }
 
 /* Dashboard warning banner */

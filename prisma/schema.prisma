@@ -51,6 +51,7 @@ model Event {
   ministryId   String
   ministry     Ministry      @relation(fields: [ministryId], references: [id], onDelete: Restrict)
   incomeTypes  IncomeType[]
+  documents    EventDocument[]
   transactions Transaction[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -93,6 +94,23 @@ model ExpenseType {
   transactions Transaction[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
+}
+
+model EventDocument {
+  id             String   @id @default(cuid())
+  eventId        String
+  event          Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  fileName       String
+  mimeType       String
+  size           Int
+  data           Bytes
+  note           String?
+  uploadedAt     DateTime @default(now())
+  uploadedByRole String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([eventId])
 }
 
 model ImportBatch {

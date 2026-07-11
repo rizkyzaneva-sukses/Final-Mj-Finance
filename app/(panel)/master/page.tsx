@@ -17,7 +17,10 @@ export default async function MasterPage() {
       include: {
         events: {
           orderBy: { name: "asc" },
-          include: { incomeTypes: { orderBy: { name: "asc" }, include: { incomeMaster: true } } },
+          include: {
+            incomeTypes: { orderBy: { name: "asc" }, include: { incomeMaster: true } },
+            _count: { select: { documents: true } },
+          },
         },
       },
     }),
@@ -37,12 +40,13 @@ export default async function MasterPage() {
     code: ministry.code,
     name: ministry.name,
     active: ministry.active,
-    events: ministry.events.map((event) => ({
-      id: event.id,
-      name: event.name,
-      category: event.category,
-      active: event.active,
-      ministryId: event.ministryId,
+      events: ministry.events.map((event) => ({
+        id: event.id,
+        name: event.name,
+        category: event.category,
+        active: event.active,
+        ministryId: event.ministryId,
+        documentCount: event._count?.documents ?? 0,
       incomeTypes: event.incomeTypes.map((type) => ({
         id: type.id,
         name: type.name,
