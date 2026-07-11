@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { MeetingSheetActions } from "@/components/meeting-sheet-actions";
-import { MeetingSheetScaler } from "@/components/meeting-sheet-scaler";
 import { getSession } from "@/lib/auth";
 import { dateId, periodBounds, rupiah } from "@/lib/format";
 import { getMeetingReportData } from "@/lib/meeting-report";
@@ -17,13 +16,14 @@ export default async function MeetingSheetPage({ searchParams }: { searchParams:
   const data = await getMeetingReportData(period.startDate, period.endDate);
   const backHref = `/reports?${new URLSearchParams({ start: period.start, end: period.end }).toString()}`;
   const autoPrint = params.print === "1";
+  const totalIncome = data.ministryRows.reduce((sum, row) => sum + row.income, 0);
+  const totalExpense = data.ministryRows.reduce((sum, row) => sum + row.expense, 0);
   const totalEventIncome = data.eventRows.reduce((sum, row) => sum + row.income, 0);
   const totalEventQrisFee = data.eventRows.reduce((sum, row) => sum + row.qrisFee, 0);
   const totalEventNet = data.eventRows.reduce((sum, row) => sum + row.net, 0);
 
   return (
     <main className="meeting-sheet-page">
-      <MeetingSheetScaler />
       <MeetingSheetActions autoPrint={autoPrint} backHref={backHref} />
 
       <article className="meeting-sheet-paper">
@@ -154,6 +154,92 @@ export default async function MeetingSheetPage({ searchParams }: { searchParams:
               )) : (
                 <tr>
                   <td colSpan={6}>Belum ada event terverifikasi pada periode ini.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </section>
+
+        <section className="meeting-sheet-grid meeting-sheet-grid-three">
+          <div className="meeting-sheet-card">
+            <span>Total pemasukan</span>
+            <strong className="money-in">{rupiah.format(totalIncome)}</strong>
+            <small>Bruto</small>
+          </div>
+          <div className="meeting-sheet-card">
+            <span>Total pengeluaran</span>
+            <strong className="money-out">{rupiah.format(totalExpense)}</strong>
+            <small>Cash basis</small>
+          </div>
+          <div className="meeting-sheet-card">
+            <span>Arus kas bersih</span>
+            <strong>{rupiah.format(totalIncome - totalExpense)}</strong>
+            <small>Netto</small>
+          </div>
+        </section>
+
+        <section className="meeting-sheet-box">
+          <div className="meeting-sheet-box-title">Arus kas per kementerian</div>
+          <table className="meeting-sheet-table">
+            <thead>
+              <tr>
+                <th>Kode</th>
+                <th>Kementerian</th>
+                <th>Pemasukan</th>
+                <th>Pengeluaran</th>
+                <th>Arus bersih</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.ministryRows.length ? data.ministryRows.map((row) => (
+                <tr key={row.code}>
+                  <td>{row.code}</td>
+                  <td>{row.ministry}</td>
+                  <td className="money-in">{rupiah.format(row.income)}</td>
+                  <td className="money-out">{rupiah.format(row.expense)}</td>
+                  <td>{rupiah.format(row.net)}</td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={5}>Belum ada transaksi terverifikasi pada periode ini.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </section>
+
+        <section className="meeting-sheet-box">
+          <div className="meeting-sheet-box-title">Rincian kegiatan · arus kas per event (Bruto → Potongan → Netto)</div>
+          <table className="meeting-sheet-table meeting-sheet-table-event">
+            <thead>
+              <tr>
+                <th>Event</th>
+                <th>Kementerian</th>
+                <th>Jenis pemasukan</th>
+                <th>Kode</th>
+                <th>Pemasukan</th>
+                <th>Pot. QRIS</th>
+                <th>Pengeluaran</th>
+                <th>Arus bersih</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.eventRows.length ? data.eventRows.flatMap((event) =>
+                event.incomeRows.map((income, index) => (
+                  <tr key={`${event.event}-${income.type}-${index}`}>
+                    {index === 0 && <td rowSpan={event.incomeRows.length}><strong>{event.event}</strong></td>}
+                    {index === 0 && <td rowSpan={event.incomeRows.length}>{event.ministry}</td>}
+                    <td>{income.type}</td>
+                    <td>{income.code || "—"}</td>
+                    <td className="money-in">{rupiah.format(income.amount)}</td>
+                    {index === 0 && <td rowSpan={event.incomeRows.length} className="money-fee">{rupiah.format(event.qrisFee)}</td>}
+                    {index === 0 && <td rowSpan={event.incomeRows.length} className="money-out">{rupiah.format(event.expense)}</td>}
+                    {index === 0 && <td rowSpan={event.incomeRows.length}><strong>{rupiah.format(event.net)}</strong></td>}
+                  </tr>
+                )),
+              ) : (
+                <tr>
+                  <td colSpan={8}>Belum ada event terverifikasi pada periode ini.</td>
                 </tr>
               )}
             </tbody>

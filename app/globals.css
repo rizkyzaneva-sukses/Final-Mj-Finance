@@ -162,6 +162,8 @@ h1, h2 { font-family: Georgia, "Times New Roman", serif; letter-spacing: -.035em
 .meeting-sheet-meta span { color: #61706b; font-size: .72rem; }
 .meeting-sheet-grid { display: grid; gap: .65rem; margin-top: .9rem; }
 .meeting-sheet-grid-four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.meeting-sheet-grid-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.meeting-sheet-box + .meeting-sheet-grid, .meeting-sheet-grid + .meeting-sheet-box, .meeting-sheet-box + .meeting-sheet-box { margin-top: .7rem; }
 .meeting-sheet-card, .meeting-sheet-box { border: 1px solid #d9d3c6; border-radius: 18px; background: #fffdfa; }
 .meeting-sheet-card { padding: .85rem .9rem; }
 .meeting-sheet-card span, .meeting-sheet-card strong, .meeting-sheet-card small { display: block; }
@@ -301,11 +303,14 @@ h1, h2 { font-family: Georgia, "Times New Roman", serif; letter-spacing: -.035em
   .meeting-sheet-header { flex-direction: row !important; }
   .meeting-sheet-account-head { flex-direction: row !important; align-items: baseline !important; }
   .meeting-sheet-meta { min-width: 210px !important; text-align: right !important; }
-  .meeting-sheet-grid-four, .meeting-sheet-stat-list, .meeting-sheet-account-values { grid-template-columns: unset !important; }
+  .meeting-sheet-grid-four, .meeting-sheet-grid-three, .meeting-sheet-stat-list, .meeting-sheet-account-values { grid-template-columns: unset !important; }
   .meeting-sheet-grid-four { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+  .meeting-sheet-grid-three { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
   .meeting-sheet-two-col { grid-template-columns: 1.15fr .85fr !important; }
   .meeting-sheet-account-values { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
   .meeting-sheet-stat-list { grid-template-columns: 1fr 1fr !important; }
+  .meeting-sheet-card, .meeting-sheet-account, .meeting-sheet-box, .meeting-sheet-table tr { break-inside: avoid; }
+  .meeting-sheet-box-title { break-after: avoid; }
 }
 
 /* ===== Panel polish ===== */
