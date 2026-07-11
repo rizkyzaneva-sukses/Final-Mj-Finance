@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { FileText } from "lucide-react";
 import { MeetingSheetActions } from "@/components/meeting-sheet-actions";
+import { MeetingSheetScaler } from "@/components/meeting-sheet-scaler";
 import { getSession } from "@/lib/auth";
 import { dateId, rupiah } from "@/lib/format";
 import { getEventBreakdown } from "@/lib/reports";
@@ -27,6 +27,7 @@ export default async function EventSheetPage({ searchParams }: { searchParams: P
   if (!breakdown) {
     return (
       <main className="meeting-sheet-page">
+        <MeetingSheetScaler />
         <MeetingSheetActions autoPrint={false} backHref="/reports" />
         <article className="meeting-sheet-paper">
           <p>Event tidak ditemukan.</p>
@@ -37,6 +38,7 @@ export default async function EventSheetPage({ searchParams }: { searchParams: P
 
   return (
     <main className="meeting-sheet-page">
+      <MeetingSheetScaler />
       <MeetingSheetActions autoPrint={autoPrint} backHref={`/reports?event=${eventId}`} />
 
       <article className="meeting-sheet-paper">

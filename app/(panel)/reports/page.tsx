@@ -42,7 +42,15 @@ export default async function ReportsPage({ searchParams }: { searchParams: Para
           title={breakdown.eventName}
           icon={<Landmark size={26} />}
           description={breakdown.ministryName ? `Kementerian ${breakdown.ministryName} · fokus ke satu event tanpa batas periode.` : "Fokus ke satu event tanpa batas periode."}
-          action={<Link className="button button-dark" href={`/reports?start=${period.start}&end=${period.end}`}><FileText size={16} /> Semua event</Link>}
+          action={(
+            <div className="page-heading-actions">
+              <a className="button button-primary" href={`/event-sheet?event=${eventId}&print=1`} target="_blank" rel="noreferrer">
+                <Download size={16} />
+                Unduh F4
+              </a>
+              <Link className="button button-dark" href={`/reports?start=${period.start}&end=${period.end}`}><FileText size={16} /> Semua event</Link>
+            </div>
+          )}
         />
         <EventReportFilter events={eventOptions} current={eventId} />
 
