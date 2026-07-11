@@ -198,6 +198,7 @@ h1, h2 { font-family: Georgia, "Times New Roman", serif; letter-spacing: -.035em
 
 :root[data-theme="dark"] .main-content { background: radial-gradient(circle at 93% 4%, rgba(134,190,167,.12), transparent 21%), radial-gradient(circle at 35% 95%, rgba(255,147,102,.08), transparent 24%), var(--paper); }
 :root[data-theme="dark"] .panel, :root[data-theme="dark"] .login-card, :root[data-theme="dark"] .master-subtable, :root[data-theme="dark"] .report-summary div, :root[data-theme="dark"] .batch-item, :root[data-theme="dark"] .responsive-transaction-table tr, :root[data-theme="dark"] .responsive-import-table tr, :root[data-theme="dark"] .responsive-report-table tr, :root[data-theme="dark"] .responsive-master-table .master-row, :root[data-theme="dark"] .guide-step, :root[data-theme="dark"] .guide-callout, :root[data-theme="dark"] .guide-report-mode, :root[data-theme="dark"] .account-balance-card, :root[data-theme="dark"] .modal-card, :root[data-theme="dark"] .search-box, :root[data-theme="dark"] .report-filters, :root[data-theme="dark"] .import-preview-stats div, :root[data-theme="dark"] .account-setup-box { background: rgba(19,32,28,.92); border-color: rgba(134,190,167,.14); box-shadow: 0 14px 40px rgba(0,0,0,.18); }
+:root[data-theme="dark"] .source-tabs, :root[data-theme="dark"] .source-summary-card, :root[data-theme="dark"] .source-summary-row { background: rgba(19,32,28,.92); border-color: rgba(134,190,167,.14); }
 :root[data-theme="dark"] .login-card-wrap { background: radial-gradient(circle at 100% 0, rgba(255,147,102,.14), transparent 35%), var(--paper); }
 :root[data-theme="dark"] .theme-toggle { color: rgba(255,255,255,.9); border-color: rgba(255,255,255,.14); background: rgba(255,255,255,.06); }
 :root[data-theme="dark"] .theme-toggle:hover, :root[data-theme="dark"] .sidebar nav a:hover, :root[data-theme="dark"] .sidebar nav a.active { background: rgba(255,255,255,.12); }
@@ -295,6 +296,29 @@ h1, h2 { font-family: Georgia, "Times New Roman", serif; letter-spacing: -.035em
 .stat-card:hover, .meeting-metric-card:hover, .meeting-account-card:hover, .account-balance-card:hover, .source-summary-card:hover { transform: translateY(-3px); box-shadow: 0 16px 40px rgba(24,52,46,.1); }
 .responsive-report-table tbody tr:hover, .responsive-transaction-table tbody tr:hover, .responsive-import-table tbody tr:hover, .responsive-master-table .master-row:hover { background: rgba(220,233,174,.16); }
 :root[data-theme="dark"] .page-heading-icon { background: rgba(134,190,167,.22); color: var(--forest-2); }
+
+/* ===== Dark mode contrast fixes ===== */
+:root[data-theme="dark"] .money-in { color: #7fe3b0 !important; }
+:root[data-theme="dark"] .money-out { color: #ff8f6b !important; }
+:root[data-theme="dark"] .money-fee { color: #ffb27a !important; }
+:root[data-theme="dark"] .stat-alert { background: linear-gradient(135deg, #1b2f2a 0%, #3a2419 100%); }
+:root[data-theme="dark"] .dashboard-warning-banner { background: linear-gradient(135deg, rgba(255,147,102,.16) 0%, rgba(19,32,28,.94) 100%); border-color: var(--orange); }
+:root[data-theme="dark"] .batch-main span { color: #ff8a6b; }
+:root[data-theme="dark"] .bulk-toolbar { background: rgba(134,190,167,.14); border-color: rgba(134,190,167,.32); }
+/* lime accent pairs (forest text on lime bg, or lime text on dark) go invisible in dark mode */
+:root[data-theme="dark"] .brand-seal { color: #0e241f; background: #d7e8a8; }
+:root[data-theme="dark"] .feature-icon { color: #0e241f; background: #d7e8a8; }
+:root[data-theme="dark"] .master-tabs button.selected { color: #0e241f; background: #d7e8a8; }
+:root[data-theme="dark"] .drop-icon { color: #0e241f; background: #d7e8a8; }
+:root[data-theme="dark"] .login-orbit span { color: #0e241f; background: #d7e8a8; }
+:root[data-theme="dark"] .status-tabs b { color: #0e241f; background: #d7e8a8; }
+:root[data-theme="dark"] .role-chip { color: #d7e8a8; background: rgba(215,232,168,.14); border-color: rgba(215,232,168,.22); }
+:root[data-theme="dark"] .sidebar nav a.active svg { color: #d7e8a8; }
+:root[data-theme="dark"] .upload-tabs button svg { color: #d7e8a8; }
+:root[data-theme="dark"] .community-quote svg { color: #d7e8a8; }
+:root[data-theme="dark"] .historical-copy b { color: #d7e8a8; }
+:root[data-theme="dark"] .info-strip b { color: #d7e8a8; }
+:root[data-theme="dark"] .historical-account-fields input:focus { border-color: #d7e8a8; }
 
 /* ===== Landing page ===== */
 .site-header { position: sticky; top: 0; z-index: 50; backdrop-filter: blur(12px); background: color-mix(in srgb, var(--paper) 78%, transparent); border-bottom: 1px solid transparent; transition: border-color .2s ease, background-color .2s ease; }
