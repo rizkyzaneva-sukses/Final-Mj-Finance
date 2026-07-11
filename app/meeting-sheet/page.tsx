@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { MeetingSheetActions } from "@/components/meeting-sheet-actions";
+import { MeetingSheetScaler } from "@/components/meeting-sheet-scaler";
 import { getSession } from "@/lib/auth";
 import { dateId, periodBounds, rupiah } from "@/lib/format";
 import { getMeetingReportData } from "@/lib/meeting-report";
@@ -22,6 +23,7 @@ export default async function MeetingSheetPage({ searchParams }: { searchParams:
 
   return (
     <main className="meeting-sheet-page">
+      <MeetingSheetScaler />
       <MeetingSheetActions autoPrint={autoPrint} backHref={backHref} />
 
       <article className="meeting-sheet-paper">

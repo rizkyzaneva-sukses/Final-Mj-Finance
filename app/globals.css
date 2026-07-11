@@ -227,13 +227,13 @@ h1, h2 { font-family: Georgia, "Times New Roman", serif; letter-spacing: -.035em
 :root[data-theme="dark"] .meeting-sheet-paper { color: #17332e; }
 :root[data-theme="dark"] .skeleton { background: linear-gradient(90deg, rgba(42,59,54,.9) 25%, rgba(74,98,89,.75) 50%, rgba(42,59,54,.9) 75%); background-size: 200% 100%; }
 
-@page { size: 210mm 330mm; margin: 10mm; }
+@page { size: 210mm 330mm; margin: 0; }
 @media print {
   html, body { background: #fff !important; }
   body { color: #17332e !important; }
-  .meeting-sheet-page { padding: 0; background: #fff !important; }
+  .meeting-sheet-page { padding: 0; min-height: 0; background: #fff !important; }
   .meeting-sheet-toolbar, .mobile-menu, .sidebar, .nav-scrim { display: none !important; }
-  .meeting-sheet-paper { width: auto; min-height: auto; margin: 0; padding: 0; box-shadow: none; }
+  .meeting-sheet-paper { width: 210mm; min-height: 330mm; margin: 0; padding: 10mm; box-sizing: border-box; box-shadow: none; }
 }
 
 @media (max-width: 1100px) {
