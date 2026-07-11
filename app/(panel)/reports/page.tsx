@@ -1,15 +1,120 @@
 import { Download, FileText, Landmark } from "lucide-react";
+import Link from "next/link";
 import { PageHeading } from "@/components/page-heading";
 import { ReportFilters } from "@/components/report-filters";
+import { EventReportFilter } from "@/components/event-report-filter";
 import { dateId, periodBounds, rupiah } from "@/lib/format";
 import { getMeetingReportData } from "@/lib/meeting-report";
+import { getEventBreakdown } from "@/lib/reports";
+import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
-type Params = Promise<{ start?: string; end?: string }>;
+type Params = Promise<{ start?: string; end?: string; event?: string }>;
+
+const sourceLabel: Record<string, string> = {
+  QRIS_XLSX: "QRIS",
+  BANK_PDF: "Mutasi PDF",
+  BANK_SCREENSHOT: "Screenshot",
+  MANUAL: "Manual",
+};
 
 export default async function ReportsPage({ searchParams }: { searchParams: Params }) {
   const params = await searchParams;
   const period = periodBounds(params.start, params.end);
+  const eventId = params.event || "";
+
+  const events = await db.event.findMany({
+    where: { active: true },
+    orderBy: [{ ministry: { code: "asc" } }, { name: "asc" }],
+    include: { ministry: true },
+  });
+  const eventOptions = events.map((e) => ({
+    value: e.id,
+    label: `${e.ministry?.code ? `${e.ministry.code} · ` : ""}${e.ministry?.name || "Tanpa kementerian"} / ${e.name}`,
+  }));
+
+  const breakdown = eventId ? await getEventBreakdown(eventId) : null;
+  if (breakdown) {
+    return (
+      <div className="page-stack">
+        <PageHeading
+          eyebrow="LAPORAN EVENT"
+          title={breakdown.eventName}
+          icon={<Landmark size={26} />}
+          description={breakdown.ministryName ? `Kementerian ${breakdown.ministryName} · fokus ke satu event tanpa batas periode.` : "Fokus ke satu event tanpa batas periode."}
+          action={<Link className="button button-dark" href={`/reports?start=${period.start}&end=${period.end}`}><FileText size={16} /> Semua event</Link>}
+        />
+        <EventReportFilter events={eventOptions} current={eventId} />
+
+        <section className="meeting-metrics-grid">
+          <div className="meeting-metric-card"><span>Pemasukan bruto</span><strong className="money-in">{rupiah.format(breakdown.income)}</strong><small>Event basis</small></div>
+          <div className="meeting-metric-card"><span>Potongan QRIS</span><strong className="money-fee">{rupiah.format(breakdown.qrisFee)}</strong><small>Akumulasi fee</small></div>
+          <div className="meeting-metric-card"><span>Pengeluaran</span><strong className="money-out">{rupiah.format(breakdown.expense)}</strong><small>Event basis</small></div>
+          <div className="meeting-metric-card"><span>Arus bersih</span><strong>{rupiah.format(breakdown.net)}</strong><small>Bruto - fee - pengeluaran</small></div>
+        </section>
+
+        <section className="guide-grid">
+          <article className="panel guide-panel">
+            <div className="panel-title"><div><span className="eyebrow">RINCIAN PEMASUKAN</span><h2>Per jenis pemasukan</h2></div></div>
+            <div className="responsive-table">
+              <table className="report-table responsive-report-table">
+                <thead><tr><th>Jenis pemasukan</th><th>Kode</th><th>Jumlah</th></tr></thead>
+                <tbody>
+                  {breakdown.incomeRows.map((row, i) => (
+                    <tr key={i}>
+                      <td data-label="Jenis pemasukan"><strong>{row.type}</strong></td>
+                      <td data-label="Kode">{row.code ? <span className="code-chip">{row.code}</span> : "—"}</td>
+                      <td className="money-in" data-label="Jumlah">{rupiah.format(row.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article className="panel guide-panel">
+            <div className="panel-title"><div><span className="eyebrow">RINCIAN PENGELUARAN</span><h2>Per jenis pengeluaran</h2></div></div>
+            <div className="responsive-table">
+              <table className="report-table responsive-report-table">
+                <thead><tr><th>Jenis pengeluaran</th><th>Jumlah</th></tr></thead>
+                <tbody>
+                  {breakdown.expenseRows.map((row, i) => (
+                    <tr key={i}>
+                      <td data-label="Jenis pengeluaran"><strong>{row.type}</strong></td>
+                      <td className="money-out" data-label="Jumlah">{rupiah.format(row.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <section className="panel table-panel">
+          <div className="panel-title"><div><span className="eyebrow">TRANSAKSI</span><h2>Daftar transaksi event ({breakdown.transactionCount})</h2></div></div>
+          {breakdown.transactions.length ? (
+            <div className="responsive-table">
+              <table className="report-table responsive-report-table">
+                <thead><tr><th>Tanggal</th><th>Keterangan</th><th>Sumber</th><th>Masuk</th><th>Keluar</th></tr></thead>
+                <tbody>
+                  {breakdown.transactions.map((row) => (
+                    <tr key={row.id}>
+                      <td data-label="Tanggal">{dateId.format(new Date(row.date))}</td>
+                      <td data-label="Keterangan" className="description-cell">{row.description}</td>
+                      <td data-label="Sumber">{sourceLabel[row.source] || row.source}</td>
+                      <td className="money-in" data-label="Masuk">{row.direction === "IN" ? `+${rupiah.format(row.amount)}` : ""}</td>
+                      <td className="money-out" data-label="Keluar">{row.direction === "OUT" ? `-${rupiah.format(row.amount)}` : ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : <Empty />}
+        </section>
+      </div>
+    );
+  }
+
   const data = await getMeetingReportData(period.startDate, period.endDate);
   const query = new URLSearchParams({ start: period.start, end: period.end }).toString();
 
@@ -42,6 +147,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Para
       />
 
       <ReportFilters start={period.start} end={period.end} />
+      <EventReportFilter events={eventOptions} current="" />
 
       <section className="panel meeting-summary-panel">
         <div className="panel-title">

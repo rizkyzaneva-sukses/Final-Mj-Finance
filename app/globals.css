@@ -220,6 +220,8 @@ h1, h2 { font-family: Georgia, "Times New Roman", serif; letter-spacing: -.035em
 :root[data-theme="dark"] .guide-callout.tone-soft { background: linear-gradient(180deg, rgba(134,190,167,.08) 0%, rgba(19,32,28,.94) 100%); }
 :root[data-theme="dark"] .account-balance-card { background: linear-gradient(145deg, rgba(19,32,28,.98) 0%, rgba(54,87,71,.66) 100%); }
 :root[data-theme="dark"] .report-filters > span, :root[data-theme="dark"] .page-heading p, :root[data-theme="dark"] .login-card p, :root[data-theme="dark"] .login-card small, :root[data-theme="dark"] td small, :root[data-theme="dark"] .transaction-main small, :root[data-theme="dark"] .batch-main small, :root[data-theme="dark"] .report-summary span, :root[data-theme="dark"] .guide-step p, :root[data-theme="dark"] .guide-callout p, :root[data-theme="dark"] .guide-report-mode li { color: var(--muted); }
+:root[data-theme="dark"] .report-event-filter { background: rgba(8,16,14,.86); border-color: rgba(134,190,167,.16); }
+:root[data-theme="dark"] .report-event-filter select { color: var(--ink); background: rgba(8,16,14,.86); border-color: rgba(134,190,167,.16); }
 :root[data-theme="dark"] .report-mini-tag { color: #d9f0e2; border-color: rgba(134,190,167,.18); background: rgba(134,190,167,.14); }
 :root[data-theme="dark"] .report-title-note, :root[data-theme="dark"] .report-table th small { color: var(--muted); }
 :root[data-theme="dark"] .meeting-metric-card, :root[data-theme="dark"] .meeting-account-values > div { background: rgba(255,255,255,.03); border-color: rgba(134,190,167,.14); }
@@ -336,6 +338,10 @@ h1, h2 { font-family: Georgia, "Times New Roman", serif; letter-spacing: -.035em
 :root[data-theme="dark"] .historical-copy b { color: #d7e8a8; }
 :root[data-theme="dark"] .info-strip b { color: #d7e8a8; }
 :root[data-theme="dark"] .historical-account-fields input:focus { border-color: #d7e8a8; }
+
+.report-event-filter { display: flex; align-items: end; gap: .8rem; background: white; border: 1px solid var(--line); border-radius: 16px; padding: .85rem 1rem; }
+.report-event-filter label { font-size: .65rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.report-event-filter select { padding: .6rem .7rem; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 9px; }
 
 /* ===== Landing page ===== */
 .site-header { position: sticky; top: 0; z-index: 50; backdrop-filter: blur(12px); background: color-mix(in srgb, var(--paper) 78%, transparent); border-bottom: 1px solid transparent; transition: border-color .2s ease, background-color .2s ease; }

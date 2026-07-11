@@ -77,3 +77,79 @@ export async function getReportData(startDate: Date, endDate: Date) {
   }).sort((a, b) => a.ministry.localeCompare(b.ministry) || a.event.localeCompare(b.event));
   return { ministryRows, eventRows, transactions };
 }
+
+export type EventBreakdown = {
+  eventId: string;
+  eventName: string;
+  ministryName: string | null;
+  income: number;
+  qrisFee: number;
+  expense: number;
+  net: number;
+  incomeRows: { type: string; code: string | null; amount: number }[];
+  expenseRows: { type: string; amount: number }[];
+  transactionCount: number;
+  transactions: { id: string; date: string; description: string; direction: string; amount: number; source: string }[];
+};
+
+export async function getEventBreakdown(eventId: string) {
+  const event = await db.event.findUnique({ where: { id: eventId }, include: { ministry: true } });
+  if (!event) return null;
+
+  const rows = await db.transaction.findMany({
+    where: {
+      isDraft: false,
+      eventId,
+      NOT: { source: "MANUAL", sourceReference: { startsWith: OPENING_BALANCE_PREFIX } },
+    },
+    include: { incomeType: true, expenseType: true },
+    orderBy: { transactionDate: "desc" },
+  });
+
+  const incomeMap = new Map<string, { type: string; code: string | null; amount: number }>();
+  const expenseMap = new Map<string, { type: string; amount: number }>();
+  let income = 0;
+  let qrisFee = 0;
+  let expense = 0;
+
+  const transactions = rows.map((row) => {
+    const amount = Number(row.amount);
+    if (row.direction === "OUT") {
+      expense += amount;
+      const key = row.expenseTypeId || "other";
+      const current = expenseMap.get(key) || { type: row.expenseType?.name || "Pengeluaran lainnya", amount: 0 };
+      current.amount += amount;
+      expenseMap.set(key, current);
+    } else {
+      income += amount;
+      if (row.source === "QRIS_XLSX") qrisFee += amount * QRIS_FEE_RATE;
+      const key = row.incomeTypeId || "other";
+      const current = incomeMap.get(key) || { type: row.incomeType?.name || "Pemasukan lainnya", code: row.incomeType?.uniqueCode || null, amount: 0 };
+      current.amount += amount;
+      incomeMap.set(key, current);
+    }
+    return {
+      id: row.id,
+      date: row.transactionDate.toISOString(),
+      description: row.description,
+      direction: row.direction,
+      amount,
+      source: row.source,
+    };
+  });
+
+  const qrisFeeRounded = roundMoney(qrisFee);
+  return {
+    eventId: event.id,
+    eventName: event.name,
+    ministryName: event.ministry?.name || null,
+    income: roundMoney(income),
+    qrisFee: qrisFeeRounded,
+    expense: roundMoney(expense),
+    net: roundMoney(income - qrisFeeRounded - expense),
+    incomeRows: [...incomeMap.values()].sort((a, b) => b.amount - a.amount),
+    expenseRows: [...expenseMap.values()].sort((a, b) => b.amount - a.amount),
+    transactionCount: rows.length,
+    transactions,
+  };
+}
