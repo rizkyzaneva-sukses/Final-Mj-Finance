@@ -108,10 +108,29 @@ export async function parseBankFile(buffer: Buffer, mimeType: string): Promise<{
     raw.transactions = raw.transactions.filter(
       (t: Record<string, unknown>) =>
         typeof t.amount === "number" && t.amount > 0 &&
-        (t.direction === "IN" || t.direction === "OUT"),
+        (t.direction === "IN" || t.direction === "OUT") &&
+        typeof t.date === "string" && t.date.trim().length > 0 &&
+        typeof t.description === "string" && t.description.trim().length > 0,
     );
   }
-  const parsed = parsedSchema.parse(raw);
+  let parsed;
+  try {
+    parsed = parsedSchema.parse(raw);
+  } catch (zodErr) {
+    console.error("[mimo] Zod parse gagal, mencoba recovery:", zodErr);
+    if (raw.transactions && Array.isArray(raw.transactions)) {
+      raw.transactions = raw.transactions.filter(
+        (t: Record<string, unknown>) =>
+          t.amount != null && typeof t.amount === "number" && t.amount > 0 &&
+          (t.direction === "IN" || t.direction === "OUT") &&
+          t.date != null && typeof t.date === "string" && String(t.date).trim().length > 0 &&
+          t.description != null && typeof t.description === "string" && String(t.description).trim().length > 0,
+      );
+      parsed = parsedSchema.parse(raw);
+    } else {
+      throw zodErr;
+    }
+  }
   const accountHolder = pdfAccount.accountHolder || parsed.accountHolder?.trim() || null;
   const accountNumber = pdfAccount.accountNumber || cleanAccountNumber(parsed.accountNumber);
 
