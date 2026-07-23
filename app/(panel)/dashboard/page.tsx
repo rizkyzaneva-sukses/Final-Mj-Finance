@@ -1,23 +1,59 @@
 import Link from "next/link";
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, CircleAlert, Sparkles, TriangleAlert, FileText, Camera } from "lucide-react";
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, CircleAlert, Sparkles, TriangleAlert, FileText, Camera, Trophy } from "lucide-react";
 import { PageHeading } from "@/components/page-heading";
 import { QrisResetButton } from "@/components/qris-reset-button";
 import { ReconciliationTrigger } from "@/components/reconciliation-trigger";
+import { DashboardFilters } from "@/components/dashboard-filters";
 import { db } from "@/lib/db";
-import { compactRupiah, dateId, rupiah } from "@/lib/format";
+import { compactRupiah, dateId, periodBounds, rupiah } from "@/lib/format";
 import { getBalanceEstimateSummary } from "@/lib/meeting-report";
 import { OPENING_BALANCE_PREFIX } from "@/lib/opening-balance";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+type SearchParams = Promise<{ start?: string; end?: string }>;
+
+function renderTrend(current: number, previous: number) {
+  if (!current && !previous) return <span className="trend-chip trend-flat">Belum ada data</span>;
+  if (!previous) return <span className="trend-chip trend-up">Baru bulan ini</span>;
+  const diff = current - previous;
+  const pct = Math.round(Math.abs(diff / previous) * 100);
+  if (diff === 0) return <span className="trend-chip trend-flat">= vs bulan lalu</span>;
+  const direction = diff > 0 ? "up" : "down";
+  const arrow = direction === "up" ? "▲" : "▼";
+  return <span className={`trend-chip trend-${direction}`}>{arrow} {pct}% vs bulan lalu</span>;
+}
+
+export default async function DashboardPage({ searchParams }: { searchParams: SearchParams }) {
+  const params = await searchParams;
+  const topExpensePeriod = periodBounds(params.start, params.end);
+
   const now = new Date();
   const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
   const endDate = now;
+  const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
 
-  const [bankMonthIncome, bankMonthExpense, unmatched, recent, byMinistry, balanceSummary, sourceBreakdown, openingBalanceRows] = await Promise.all([
+  const [
+    bankMonthIncome,
+    bankMonthExpense,
+    bankPrevMonthIncome,
+    bankPrevMonthExpense,
+    unmatched,
+    recent,
+    byMinistry,
+    prevMonthByMinistry,
+    allTimeByMinistry,
+    balanceSummary,
+    sourceBreakdown,
+    openingBalanceRows,
+    allMinistries,
+    topExpenseGroups,
+  ] = await Promise.all([
     db.transaction.aggregate({ where: { isDraft: false, source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] }, direction: "IN", transactionDate: { gte: startDate, lte: endDate } }, _sum: { amount: true } }),
     db.transaction.aggregate({ where: { isDraft: false, source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] }, direction: "OUT", transactionDate: { gte: startDate, lte: endDate } }, _sum: { amount: true } }),
+    db.transaction.aggregate({ where: { isDraft: false, source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] }, direction: "IN", transactionDate: { gte: prevMonthStart, lte: prevMonthEnd } }, _sum: { amount: true } }),
+    db.transaction.aggregate({ where: { isDraft: false, source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] }, direction: "OUT", transactionDate: { gte: prevMonthStart, lte: prevMonthEnd } }, _sum: { amount: true } }),
     db.transaction.count({ where: { isDraft: false, status: "UNMATCHED" } }),
     db.transaction.findMany({
       where: { isDraft: false, source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] } },
@@ -32,6 +68,29 @@ export default async function DashboardPage() {
         source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] },
         status: "MATCHED",
         transactionDate: { gte: startDate, lte: endDate },
+        ministryId: { not: null },
+      },
+      _sum: { amount: true },
+    }),
+    // Same as above, but for the previous calendar month — powers the "vs bulan lalu" trend per kementerian.
+    db.transaction.groupBy({
+      by: ["ministryId", "direction"],
+      where: {
+        isDraft: false,
+        source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] },
+        status: "MATCHED",
+        transactionDate: { gte: prevMonthStart, lte: prevMonthEnd },
+        ministryId: { not: null },
+      },
+      _sum: { amount: true },
+    }),
+    // Cumulative, all-time totals per kementerian — powers Total Masuk / Total Keluar / Sisa.
+    db.transaction.groupBy({
+      by: ["ministryId", "direction"],
+      where: {
+        isDraft: false,
+        source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] },
+        status: "MATCHED",
         ministryId: { not: null },
       },
       _sum: { amount: true },
@@ -56,19 +115,72 @@ export default async function DashboardPage() {
       },
       select: { accountHolder: true, accountNumber: true, sourceReference: true },
     }),
+    db.ministry.findMany({ where: { active: true }, orderBy: { code: "asc" } }),
+    // Biggest expense event per kementerian, within the selected (or default current-month) range.
+    db.transaction.groupBy({
+      by: ["ministryId", "eventId"],
+      where: {
+        isDraft: false,
+        status: "MATCHED",
+        direction: "OUT",
+        ministryId: { not: null },
+        eventId: { not: null },
+        transactionDate: { gte: topExpensePeriod.startDate, lte: topExpensePeriod.endDate },
+      },
+      _sum: { amount: true },
+    }),
   ]);
 
   const incomeValue = Number(bankMonthIncome._sum.amount || 0);
   const expenseValue = Number(bankMonthExpense._sum.amount || 0);
+  const prevIncomeValue = Number(bankPrevMonthIncome._sum.amount || 0);
+  const prevExpenseValue = Number(bankPrevMonthExpense._sum.amount || 0);
   const currentBalance = balanceSummary.confirmedTotal;
   const ministryIds = byMinistry.map((row) => row.ministryId).filter(Boolean) as string[];
-  const ministries = await db.ministry.findMany({ where: { id: { in: ministryIds } } });
+  const ministries = allMinistries.filter((ministry) => ministryIds.includes(ministry.id));
   const chart = ministries.map((ministry) => ({
     name: ministry.name,
     income: Number(byMinistry.find((row) => row.ministryId === ministry.id && row.direction === "IN")?._sum.amount || 0),
     expense: Number(byMinistry.find((row) => row.ministryId === ministry.id && row.direction === "OUT")?._sum.amount || 0),
   })).sort((a, b) => b.income - a.income);
   const max = Math.max(1, ...chart.flatMap((item) => [item.income, item.expense]));
+
+  // --- Per-kementerian summary: total masuk / keluar / sisa (all-time) + bulan ini vs bulan lalu ---
+  const ministrySummaryRows = allMinistries.map((ministry) => {
+    const totalIncome = Number(allTimeByMinistry.find((row) => row.ministryId === ministry.id && row.direction === "IN")?._sum.amount || 0);
+    const totalExpense = Number(allTimeByMinistry.find((row) => row.ministryId === ministry.id && row.direction === "OUT")?._sum.amount || 0);
+    const monthIncome = Number(byMinistry.find((row) => row.ministryId === ministry.id && row.direction === "IN")?._sum.amount || 0);
+    const monthExpense = Number(byMinistry.find((row) => row.ministryId === ministry.id && row.direction === "OUT")?._sum.amount || 0);
+    const prevMonthIncome = Number(prevMonthByMinistry.find((row) => row.ministryId === ministry.id && row.direction === "IN")?._sum.amount || 0);
+    const prevMonthExpense = Number(prevMonthByMinistry.find((row) => row.ministryId === ministry.id && row.direction === "OUT")?._sum.amount || 0);
+    return {
+      code: ministry.code,
+      name: ministry.name,
+      totalIncome,
+      totalExpense,
+      sisa: totalIncome - totalExpense,
+      monthNet: monthIncome - monthExpense,
+      prevMonthNet: prevMonthIncome - prevMonthExpense,
+    };
+  });
+
+  // --- Kegiatan dengan pengeluaran terbesar per kementerian (periode terpilih, default bulan berjalan) ---
+  const topExpenseByMinistry = new Map<string, { eventId: string; amount: number }>();
+  for (const row of topExpenseGroups) {
+    const amount = Number(row._sum.amount || 0);
+    const existing = topExpenseByMinistry.get(row.ministryId!);
+    if (!existing || amount > existing.amount) topExpenseByMinistry.set(row.ministryId!, { eventId: row.eventId!, amount });
+  }
+  const topExpenseEvents = topExpenseByMinistry.size
+    ? await db.event.findMany({ where: { id: { in: [...topExpenseByMinistry.values()].map((v) => v.eventId) } } })
+    : [];
+  const topExpenseRows = [...topExpenseByMinistry.entries()]
+    .map(([ministryId, value]) => {
+      const ministry = allMinistries.find((m) => m.id === ministryId);
+      const event = topExpenseEvents.find((e) => e.id === value.eventId);
+      return { ministryCode: ministry?.code ?? 0, ministryName: ministry?.name || "—", eventName: event?.name || "—", amount: value.amount };
+    })
+    .sort((a, b) => b.amount - a.amount);
 
   // --- Per-source balance breakdown ---
   const bankSources = ["BANK_PDF", "BANK_SCREENSHOT"] as const;
@@ -125,8 +237,8 @@ export default async function DashboardPage() {
       )}
 
       <section className="stats-grid">
-        <article className="stat-card stat-income"><div className="stat-icon"><ArrowDownLeft /></div><span>Uang masuk rekening</span><strong>{compactRupiah.format(incomeValue)}</strong><small>Bulan berjalan · mutasi bank</small></article>
-        <article className="stat-card stat-expense"><div className="stat-icon"><ArrowUpRight /></div><span>Uang keluar rekening</span><strong>{compactRupiah.format(expenseValue)}</strong><small>Bulan berjalan · mutasi bank</small></article>
+        <article className="stat-card stat-income"><div className="stat-icon"><ArrowDownLeft /></div><span>Uang masuk rekening</span><strong>{compactRupiah.format(incomeValue)}</strong><small>Bulan berjalan · mutasi bank</small>{renderTrend(incomeValue, prevIncomeValue)}</article>
+        <article className="stat-card stat-expense"><div className="stat-icon"><ArrowUpRight /></div><span>Uang keluar rekening</span><strong>{compactRupiah.format(expenseValue)}</strong><small>Bulan berjalan · mutasi bank</small>{renderTrend(expenseValue, prevExpenseValue)}</article>
         <article className="stat-card stat-balance"><div className="stat-icon">=</div><span>Saldo rekening saat ini</span><strong>{compactRupiah.format(currentBalance)}</strong><small>Akumulasi seluruh mutasi bank final</small></article>
         <article className={`stat-card stat-alert ${unmatched > 0 ? "stat-alert-active" : ""}`}><div className="stat-icon"><CircleAlert /></div><span>Perlu ditinjau</span><strong>{unmatched}</strong><small>Transaksi belum di-assign</small></article>
       </section>
@@ -206,6 +318,70 @@ export default async function DashboardPage() {
             </article>
           ))}
         </div>
+      </section>
+
+      <section className="panel table-panel">
+        <div className="panel-title"><div><span className="eyebrow">RINGKASAN PER KEMENTERIAN</span><h2>Total masuk, keluar, dan sisa dana</h2></div></div>
+        {ministrySummaryRows.length ? (
+          <div className="responsive-table">
+            <table className="report-table responsive-report-table">
+              <thead>
+                <tr>
+                  <th>Kode</th>
+                  <th>Kementerian</th>
+                  <th>Total masuk</th>
+                  <th>Total keluar</th>
+                  <th>Sisa</th>
+                  <th>Bulan ini vs lalu</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ministrySummaryRows.map((row) => (
+                  <tr key={row.code}>
+                    <td data-label="Kode"><span className="ministry-code">{row.code}</span></td>
+                    <td data-label="Kementerian"><strong>{row.name}</strong></td>
+                    <td className="money-in" data-label="Total masuk">{rupiah.format(row.totalIncome)}</td>
+                    <td className="money-out" data-label="Total keluar">{rupiah.format(row.totalExpense)}</td>
+                    <td data-label="Sisa"><strong className={row.sisa < 0 ? "money-out" : "money-in"}>{rupiah.format(row.sisa)}</strong></td>
+                    <td data-label="Bulan ini vs lalu">{renderTrend(row.monthNet, row.prevMonthNet)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <Empty text="Belum ada kementerian aktif." />}
+        <p className="table-panel-note">Total masuk/keluar dihitung kumulatif dari seluruh mutasi bank final (bukan hanya bulan berjalan). Sebagian kementerian hanya menyalurkan dana tanpa menerima pemasukan langsung — sisa negatif untuk kementerian jenis ini adalah hal yang wajar.</p>
+      </section>
+
+      <section className="panel table-panel">
+        <div className="panel-title">
+          <div><span className="eyebrow">KEGIATAN TERBOROS</span><h2>Pengeluaran terbesar per kementerian</h2></div>
+        </div>
+        <DashboardFilters start={topExpensePeriod.start} end={topExpensePeriod.end} />
+        {topExpenseRows.length ? (
+          <div className="responsive-table">
+            <table className="report-table responsive-report-table">
+              <thead>
+                <tr>
+                  <th>Kode</th>
+                  <th>Kementerian</th>
+                  <th>Kegiatan</th>
+                  <th>Pengeluaran</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topExpenseRows.map((row) => (
+                  <tr key={row.ministryCode}>
+                    <td data-label="Kode"><span className="ministry-code">{row.ministryCode}</span></td>
+                    <td data-label="Kementerian"><strong>{row.ministryName}</strong></td>
+                    <td data-label="Kegiatan"><Trophy size={14} style={{ marginRight: "0.35rem", verticalAlign: "-2px" }} />{row.eventName}</td>
+                    <td className="money-out" data-label="Pengeluaran">{rupiah.format(row.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <Empty text="Belum ada pengeluaran ter-assign pada periode ini." />}
       </section>
 
       <section className="dashboard-grid">
