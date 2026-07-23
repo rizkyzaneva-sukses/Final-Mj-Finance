@@ -61,37 +61,40 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       take: 6,
       include: { event: true, ministry: true },
     }),
+    // Per-kementerian gerak dana: semua sumber (bank + QRIS per event), bukan hanya mutasi bank.
+    // Pencairan QRIS gabungan selalu di-skip (lihat TEMPLATE/README.md), jadi filter status MATCHED
+    // di sini tidak akan menghitung dobel dengan baris QRIS_XLSX per-event di bawah.
     db.transaction.groupBy({
       by: ["ministryId", "direction"],
       where: {
         isDraft: false,
-        source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] },
         status: "MATCHED",
         transactionDate: { gte: startDate, lte: endDate },
         ministryId: { not: null },
+        NOT: { source: "MANUAL", sourceReference: { startsWith: OPENING_BALANCE_PREFIX } },
       },
       _sum: { amount: true },
     }),
-    // Same as above, but for the previous calendar month — powers the "vs bulan lalu" trend per kementerian.
+    // Sama seperti di atas, tapi untuk bulan kalender sebelumnya — dipakai untuk tren "vs bulan lalu" per kementerian.
     db.transaction.groupBy({
       by: ["ministryId", "direction"],
       where: {
         isDraft: false,
-        source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] },
         status: "MATCHED",
         transactionDate: { gte: prevMonthStart, lte: prevMonthEnd },
         ministryId: { not: null },
+        NOT: { source: "MANUAL", sourceReference: { startsWith: OPENING_BALANCE_PREFIX } },
       },
       _sum: { amount: true },
     }),
-    // Cumulative, all-time totals per kementerian — powers Total Masuk / Total Keluar / Sisa.
+    // Total kumulatif sepanjang waktu per kementerian — dipakai untuk Total Masuk / Total Keluar / Sisa.
     db.transaction.groupBy({
       by: ["ministryId", "direction"],
       where: {
         isDraft: false,
-        source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] },
         status: "MATCHED",
         ministryId: { not: null },
+        NOT: { source: "MANUAL", sourceReference: { startsWith: OPENING_BALANCE_PREFIX } },
       },
       _sum: { amount: true },
     }),
@@ -350,7 +353,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             </table>
           </div>
         ) : <Empty text="Belum ada kementerian aktif." />}
-        <p className="table-panel-note">Total masuk/keluar dihitung kumulatif dari seluruh mutasi bank final (bukan hanya bulan berjalan). Sebagian kementerian hanya menyalurkan dana tanpa menerima pemasukan langsung — sisa negatif untuk kementerian jenis ini adalah hal yang wajar.</p>
+        <p className="table-panel-note">Total masuk/keluar dihitung kumulatif sepanjang waktu (bukan hanya bulan berjalan) dari seluruh transaksi final yang sudah di-assign ke kementerian — termasuk rincian pemasukan QRIS per event, sama seperti basis di halaman Laporan. Angka ini beda dari "Saldo rekening saat ini" di atas: pencairan QRIS gabungan ke rekening tidak dihitung lagi di sini supaya tidak dobel. Sebagian kementerian hanya menyalurkan dana tanpa menerima pemasukan langsung — sisa negatif untuk kementerian jenis ini adalah hal yang wajar.</p>
       </section>
 
       <section className="panel table-panel">
