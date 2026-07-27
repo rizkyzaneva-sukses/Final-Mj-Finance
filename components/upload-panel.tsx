@@ -1,10 +1,29 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArchiveRestore, FileSpreadsheet, ImagePlus, LoaderCircle, UploadCloud, X } from "lucide-react";
 
 type UploadKind = "QRIS" | "BANK" | "HISTORICAL";
+
+function isImageFile(file: File) {
+  return file.type.startsWith("image/") || /\.(jpg|jpeg|png|webp)$/i.test(file.name);
+}
+
+function FilePreview({ file }: { file: File }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (isImageFile(file)) {
+      const objectUrl = URL.createObjectURL(file);
+      setUrl(objectUrl);
+      return () => URL.revokeObjectURL(objectUrl);
+    }
+  }, [file]);
+  if (url) {
+    return <img src={url} alt={file.name} className="upload-preview-thumb" />;
+  }
+  return <div className="upload-preview-icon"><FileSpreadsheet size={20} /></div>;
+}
 
 export function UploadPanel({ canImportHistorical = false }: { canImportHistorical?: boolean }) {
   const router = useRouter();
@@ -80,9 +99,12 @@ export function UploadPanel({ canImportHistorical = false }: { canImportHistoric
         ) : <><strong>Pilih file {fileLabel}</strong><p>{fileFormat} · maksimum 15 MB per file</p></>}
       </div>
       {kind === "BANK" && files.length > 0 && <ul className="upload-file-list">
-        {files.map((item, index) => <li key={`${item.name}-${index}`}>
-          <span>{item.name}</span>
-          <small>{(item.size / 1024 / 1024).toFixed(2)} MB</small>
+        {files.map((item, index) => <li key={`${item.name}-${index}`} className="upload-file-item">
+          <FilePreview file={item} />
+          <div className="upload-file-info">
+            <span>{item.name}</span>
+            <small>{(item.size / 1024 / 1024).toFixed(2)} MB</small>
+          </div>
           <button type="button" className="icon-button" title="Hapus dari daftar" onClick={(event) => { event.stopPropagation(); removeFile(index); }}><X size={14} /></button>
         </li>)}
       </ul>}
