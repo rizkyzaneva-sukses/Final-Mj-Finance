@@ -20,7 +20,7 @@ export function parseQrisWorkbook(buffer: Buffer): NormalizedTransaction[] {
   return rows
     .filter((row) => String(row.TRANSACTION_STATUS || "").toUpperCase() === "APPROVED")
     .map((row) => {
-      const amount = Number(row.AMOUNT);
+      const amount = Number(String(row.AMOUNT).replace(/,/g, ""));
       if (!Number.isFinite(amount) || amount <= 0) throw new Error("Nominal QRIS tidak valid.");
       const reference = String(row.TRANSACTION_ID || row.RRN || row.INVOICE_NUMBER || "").trim();
       return {
