@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ArchiveRestore, FileSpreadsheet, ImagePlus, LoaderCircle, UploadCloud, X } from "lucide-react";
 
@@ -55,27 +55,50 @@ export function UploadPanel({ canImportHistorical = false }: { canImportHistoric
   }
 
   async function upload() {
-    if (!files.length) return;
+    if (!files.length || loading) return;
     if (kind === "HISTORICAL" && replaceExisting && !window.confirm("Hapus seluruh transaksi dan riwayat impor saat ini? Master Data tetap dipertahankan.")) return;
     setLoading(true);
     setMessage(null);
-    const data = new FormData();
-    data.set("kind", kind);
-    files.forEach((item) => data.append("file", item));
-    if (kind === "HISTORICAL") {
-      data.set("replaceExisting", String(replaceExisting));
-      data.set("qrisAccountHolder", qrisAccountHolder);
-      data.set("qrisAccountNumber", qrisAccountNumber);
+    try {
+      const data = new FormData();
+      data.set("kind", kind);
+      files.forEach((item) => data.append("file", item));
+      if (kind === "HISTORICAL") {
+        data.set("replaceExisting", String(replaceExisting));
+        data.set("qrisAccountHolder", qrisAccountHolder);
+        data.set("qrisAccountNumber", qrisAccountNumber);
+      }
+      const response = await fetch("/api/imports", { method: "POST", body: data });
+      let payload: { error?: string; batchId?: string } = {};
+      try {
+        payload = await response.json();
+      } catch {
+        payload = { error: "Respons server tidak valid." };
+      }
+      if (!response.ok) setMessage({ type: "error", text: payload.error || "Impor gagal." });
+      else if (!payload.batchId) setMessage({ type: "error", text: "Impor gagal: batch tidak ditemukan." });
+      else {
+        setFiles([]);
+        if (inputRef.current) inputRef.current.value = "";
+        router.push(`/imports/${payload.batchId}`);
+      }
+    } catch {
+      setMessage({ type: "error", text: "Koneksi gagal. Coba unggah lagi." });
+    } finally {
+      setLoading(false);
     }
-    const response = await fetch("/api/imports", { method: "POST", body: data });
-    const payload = await response.json();
-    if (!response.ok) setMessage({ type: "error", text: payload.error || "Impor gagal." });
-    else {
-      setFiles([]);
-      if (inputRef.current) inputRef.current.value = "";
-      router.push(`/imports/${payload.batchId}`);
-    }
-    setLoading(false);
+  }
+
+  function onDropZoneDragOver(event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function onDropZoneDrop(event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (loading) return;
+    addFiles(event.dataTransfer.files);
   }
 
   const accept = kind === "QRIS" ? ".xlsx,.xls" : kind === "HISTORICAL" ? ".xlsx" : ".pdf,.jpg,.jpeg,.png,.webp";
@@ -89,14 +112,14 @@ export function UploadPanel({ canImportHistorical = false }: { canImportHistoric
         <button className={kind === "BANK" ? "selected" : ""} onClick={() => changeKind("BANK")}><ImagePlus /> <span><b>Mutasi BCA</b><small>PDF atau screenshot</small></span></button>
         {canImportHistorical && <button className={kind === "HISTORICAL" ? "selected" : ""} onClick={() => changeKind("HISTORICAL")}><ArchiveRestore /> <span><b>Data Lama FINAL</b><small>Mapping historis siap review</small></span></button>}
       </div>
-      <div className="drop-zone" onClick={() => inputRef.current?.click()}>
+      <div className="drop-zone" onClick={() => !loading && inputRef.current?.click()} onDragOver={onDropZoneDragOver} onDrop={onDropZoneDrop}>
         <input ref={inputRef} type="file" accept={accept} multiple={kind === "BANK"} onChange={(event) => addFiles(event.target.files)} hidden />
         <div className="drop-icon"><UploadCloud /></div>
         {files.length ? (
           kind === "BANK"
             ? <><strong>{files.length} file dipilih</strong><p>{totalSizeMb.toFixed(2)} MB total · klik untuk tambah lagi</p></>
             : <><strong>{files[0].name}</strong><p>{(files[0].size / 1024 / 1024).toFixed(2)} MB · klik untuk mengganti</p></>
-        ) : <><strong>Pilih file {fileLabel}</strong><p>{fileFormat} · maksimum 15 MB per file</p></>}
+        ) : <><strong>Pilih file {fileLabel}</strong><p>{fileFormat} · maksimum 15 MB per file · drag & drop didukung</p></>}
       </div>
       {kind === "BANK" && files.length > 0 && <ul className="upload-file-list">
         {files.map((item, index) => <li key={`${item.name}-${index}`} className="upload-file-item">
