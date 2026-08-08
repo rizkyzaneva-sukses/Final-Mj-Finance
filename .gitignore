@@ -11,3 +11,4 @@ outputs/
 TEMPLATE/**
 !TEMPLATE/
 !TEMPLATE/README.md
+DATA/
