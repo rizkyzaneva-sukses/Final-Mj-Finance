@@ -46,7 +46,9 @@ export function UploadPanel({ canImportHistorical = false }: { canImportHistoric
 
   function addFiles(picked: FileList | null) {
     if (!picked?.length) return;
-    setFiles((current) => (kind === "BANK" ? [...current, ...Array.from(picked)] : [picked[0]]));
+    const arr = Array.from(picked);
+    if (!arr.length) return;
+    setFiles((current) => (kind === "BANK" ? [...current, ...arr] : [arr[0]]));
     if (inputRef.current) inputRef.current.value = "";
   }
 
@@ -112,8 +114,8 @@ export function UploadPanel({ canImportHistorical = false }: { canImportHistoric
         <button className={kind === "BANK" ? "selected" : ""} onClick={() => changeKind("BANK")}><ImagePlus /> <span><b>Mutasi BCA</b><small>PDF atau screenshot</small></span></button>
         {canImportHistorical && <button className={kind === "HISTORICAL" ? "selected" : ""} onClick={() => changeKind("HISTORICAL")}><ArchiveRestore /> <span><b>Data Lama FINAL</b><small>Mapping historis siap review</small></span></button>}
       </div>
-      <div className="drop-zone" onClick={() => !loading && inputRef.current?.click()} onDragOver={onDropZoneDragOver} onDrop={onDropZoneDrop}>
-        <input ref={inputRef} type="file" accept={accept} multiple={kind === "BANK"} onChange={(event) => addFiles(event.target.files)} hidden />
+      <div className="drop-zone" onDragOver={onDropZoneDragOver} onDrop={onDropZoneDrop}>
+        <input ref={inputRef} type="file" accept={accept} multiple={kind === "BANK"} onChange={(event) => addFiles(event.target.files)} className="drop-zone-file-input" />
         <div className="drop-icon"><UploadCloud /></div>
         {files.length ? (
           kind === "BANK"
