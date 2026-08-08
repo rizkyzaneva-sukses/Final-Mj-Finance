@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { fingerprint } from "@/lib/matching";
+import { parseIdrInput } from "@/lib/money";
 import { openingBalanceReference, OPENING_BALANCE_PREFIX } from "@/lib/opening-balance";
 
 function ensureFinance(session: Awaited<ReturnType<typeof getSession>>) {
@@ -20,11 +21,17 @@ function parseOpeningDate(value: unknown) {
   return parsed;
 }
 
-function parseAmount(value: unknown) {
-  const numeric = String(value || "").replace(/[^\d]/g, "");
-  if (!numeric) throw new Error("Nominal saldo awal wajib diisi.");
-  const amount = Number(numeric);
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error("Nominal saldo awal harus lebih dari nol.");
+/**
+ * Nominal saldo awal boleh bertanda minus (rekening yang perlu koreksi negatif) dan
+ * boleh berdesimal. Nilai bertanda dikembalikan apa adanya; pemanggil yang memecahnya
+ * menjadi `amount` absolut + `direction`.
+ */
+function parseSignedAmount(value: unknown) {
+  const amount = parseIdrInput(value);
+  if (amount === null) {
+    throw new Error("Nominal saldo awal wajib diisi dengan angka yang valid. Contoh: 1.500.000 atau -250.000,75.");
+  }
+  if (amount === 0) throw new Error("Nominal saldo awal tidak boleh nol.");
   return amount;
 }
 
@@ -33,13 +40,23 @@ function normalizePayload(body: Record<string, unknown>) {
   const accountNumber = String(body.accountNumber || "").replace(/\D/g, "") || null;
   const note = String(body.note || "").trim() || null;
   if (!accountHolder) throw new Error("Nama pemilik rekening wajib diisi.");
+  const signedAmount = parseSignedAmount(body.amount);
   return {
     accountHolder,
     accountNumber,
     note,
-    amount: parseAmount(body.amount),
+    // Kolom `amount` di skema selalu positif; arah uang disimpan di `direction`.
+    // Seluruh aplikasi menjumlahkan saldo dengan pola `direction === "IN" ? +amount : -amount`
+    // (lihat `lib/meeting-report.ts` dan `app/api/reconciliation/route.ts`), jadi menyimpan
+    // amount negatif dengan direction IN akan merusak perhitungan di tempat lain.
+    amount: Math.abs(signedAmount),
+    direction: (signedAmount < 0 ? "OUT" : "IN") as "IN" | "OUT",
     transactionDate: parseOpeningDate(body.transactionDate),
   };
+}
+
+function openingBalanceDescription(accountHolder: string, direction: "IN" | "OUT") {
+  return `Saldo awal rekening ${accountHolder}${direction === "OUT" ? " (saldo minus)" : ""}`;
 }
 
 export async function POST(request: Request) {
@@ -66,9 +83,9 @@ export async function POST(request: Request) {
 
     const transaction = {
       transactionDate: payload.transactionDate,
-      description: `Saldo awal rekening ${payload.accountHolder}`,
+      description: openingBalanceDescription(payload.accountHolder, payload.direction),
       amount: payload.amount,
-      direction: "IN" as const,
+      direction: payload.direction,
       source: "MANUAL" as const,
       accountHolder: payload.accountHolder,
       accountNumber: payload.accountNumber,
@@ -137,9 +154,9 @@ export async function PATCH(request: Request) {
 
     const transaction = {
       transactionDate: payload.transactionDate,
-      description: `Saldo awal rekening ${payload.accountHolder}`,
+      description: openingBalanceDescription(payload.accountHolder, payload.direction),
       amount: payload.amount,
-      direction: "IN" as const,
+      direction: payload.direction,
       source: "MANUAL" as const,
       accountHolder: payload.accountHolder,
       accountNumber: payload.accountNumber,

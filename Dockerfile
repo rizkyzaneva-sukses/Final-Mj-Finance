@@ -6,6 +6,10 @@ RUN npm install
 
 FROM node:22-alpine AS builder
 WORKDIR /app
+# tzdata + TZ: build juga bisa mengeksekusi kode yang menghitung tanggal (mis. generasi
+# halaman statis), jadi builder pun dikunci ke WIB agar hasilnya konsisten.
+RUN apk add --no-cache tzdata
+ENV TZ=Asia/Jakarta
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -13,7 +17,12 @@ RUN npx prisma generate && npm run build
 
 FROM node:22-alpine AS runner
 WORKDIR /app
-RUN apk add --no-cache libc6-compat openssl && addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+RUN apk add --no-cache libc6-compat openssl tzdata && addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+# Zona waktu operasional aplikasi adalah WIB. Alpine butuh paket `tzdata` agar TZ benar-benar
+# berlaku; tanpa ini container berjalan di UTC dan batas bulan pada laporan bergeser 7 jam.
+# Ini lapisan pertahanan kedua — perhitungan periode di lib/format.ts sudah dikunci ke WIB
+# secara eksplisit dan tidak bergantung pada nilai TZ ini.
+ENV TZ=Asia/Jakarta
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000

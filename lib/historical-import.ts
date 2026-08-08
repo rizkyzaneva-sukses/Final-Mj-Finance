@@ -5,8 +5,10 @@ import type {
   TransactionSource,
   TransactionStatus,
 } from "@prisma/client";
+import { excludeOpeningBalanceWhere } from "@/lib/accounts";
 import { db } from "@/lib/db";
 import { BATCH_QRIS_MARKER, fingerprint, type NormalizedTransaction } from "@/lib/matching";
+import { parseIdrInput, roundMoney } from "@/lib/money";
 
 type HistoricalKind = "MUTASI" | "QRIS";
 
@@ -22,12 +24,23 @@ export type HistoricalRow = NormalizedTransaction & {
   forceSkip?: boolean;
 };
 
+/** Baris yang dilewati karena datanya rusak — dilaporkan, tidak lagi menggagalkan seluruh impor. */
+export type SkippedHistoricalRow = {
+  rowNumber: number;
+  reason: string;
+};
+
 export type ParsedHistoricalWorkbook = {
   kind: HistoricalKind;
   source: TransactionSource;
   accountHolder: string | null;
   accountNumber: string | null;
   rows: HistoricalRow[];
+  /**
+   * Field TAMBAHAN (opsional) — bentuk lama tidak diubah karena dipakai
+   * app/api/imports/route.ts. Berisi baris rusak yang dilewati saat parsing.
+   */
+  skippedRows?: SkippedHistoricalRow[];
 };
 
 type SheetRow = Record<string, unknown>;
@@ -40,14 +53,13 @@ function optionalText(value: unknown) {
   return text(value) || null;
 }
 
+/**
+ * Parsing nominal memakai `parseIdrInput` dari @/lib/money supaya aturan pemisah
+ * ribuan/desimal sama persis dengan sisa aplikasi. Nilai <= 0 tetap ditolak.
+ */
 function amount(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  const source = text(value);
-  const normalized = /^\d{1,3}(?:[.,]\d{3})+$/.test(source)
-    ? source.replace(/[.,]/g, "")
-    : source.replace(/,/g, "");
-  const parsed = Number(normalized);
-  if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`Nominal tidak valid: ${source || "kosong"}`);
+  const parsed = typeof value === "number" && Number.isFinite(value) ? roundMoney(value) : parseIdrInput(text(value));
+  if (parsed === null || parsed <= 0) throw new Error(`Nominal tidak valid: ${text(value) || "kosong"}`);
   return parsed;
 }
 
@@ -80,15 +92,51 @@ function serializableRow(row: SheetRow, extra: Record<string, unknown>): Prisma.
   return JSON.parse(JSON.stringify({ ...row, ...extra })) as Prisma.InputJsonValue;
 }
 
+/**
+ * Baca satu sheet baris demi baris. Baris rusak dikumpulkan sebagai `skipped`, BUKAN
+ * dilempar keluar — satu sel rusak tidak boleh lagi membatalkan seluruh workbook.
+ * Error hanya dilempar bila TIDAK ADA satu pun baris yang valid.
+ */
+function collectRows(
+  sheet: SheetRow[],
+  label: string,
+  build: (row: SheetRow, rowNumber: number) => HistoricalRow,
+) {
+  const rows: HistoricalRow[] = [];
+  const skipped: SkippedHistoricalRow[] = [];
+
+  sheet.forEach((row, index) => {
+    // +2 = 1 baris header + indeks berbasis 0, supaya cocok dengan nomor baris di Excel.
+    const rowNumber = index + 2;
+    try {
+      rows.push(build(row, rowNumber));
+    } catch (error) {
+      skipped.push({
+        rowNumber,
+        reason: error instanceof Error ? error.message : "Baris tidak bisa dibaca.",
+      });
+    }
+  });
+
+  if (!rows.length) {
+    if (!skipped.length) throw new Error(`Tidak ada baris ${label} yang bisa dibaca dari workbook ini.`);
+    const preview = skipped.slice(0, 5).map((item) => `baris ${item.rowNumber}: ${item.reason}`).join("; ");
+    const rest = skipped.length > 5 ? ` (dan ${skipped.length - 5} baris lain bermasalah)` : "";
+    throw new Error(`Tidak ada baris ${label} yang valid. Penyebabnya — ${preview}${rest}.`);
+  }
+
+  return { rows, skipped };
+}
+
 function parseMutasi(workbook: XLSX.WorkBook): ParsedHistoricalWorkbook {
-  const rows = sheetRows(workbook, "Mutasi_Clean_All_Real").map((row, index) => {
+  const { rows, skipped } = collectRows(sheetRows(workbook, "Mutasi_Clean_All_Real"), "mutasi", (row, rowNumber) => {
     const direction = text(row.direction).toUpperCase();
     if (direction !== "IN" && direction !== "OUT") {
-      throw new Error(`Arah transaksi mutasi baris ${index + 2} harus IN atau OUT.`);
+      throw new Error(`Arah transaksi mutasi baris ${rowNumber} harus IN atau OUT.`);
     }
 
     const description = text(row.bank_description);
-    if (!description) throw new Error(`Deskripsi mutasi baris ${index + 2} kosong.`);
+    if (!description) throw new Error(`Deskripsi mutasi baris ${rowNumber} kosong.`);
     const forceSkip = text(row.qris_batch_flag).toUpperCase() === "YES" || description.toUpperCase().includes(BATCH_QRIS_MARKER);
     const accountHolder = optionalText(row.account_holder);
     const accountNumber = optionalText(row.account_number)?.replace(/\D/g, "") || null;
@@ -118,7 +166,7 @@ function parseMutasi(workbook: XLSX.WorkBook): ParsedHistoricalWorkbook {
     } satisfies HistoricalRow;
   });
 
-  return { kind: "MUTASI", source: "BANK_PDF", accountHolder: null, accountNumber: null, rows };
+  return { kind: "MUTASI", source: "BANK_PDF", accountHolder: null, accountNumber: null, rows, skippedRows: skipped };
 }
 
 function parseQris(
@@ -126,10 +174,10 @@ function parseQris(
   accountHolder: string | null,
   accountNumber: string | null,
 ): ParsedHistoricalWorkbook {
-  const rows = sheetRows(workbook, "QRIS_Clean_Mapping").map((row, index) => {
+  const { rows, skipped } = collectRows(sheetRows(workbook, "QRIS_Clean_Mapping"), "QRIS", (row, rowNumber) => {
     const rrn = text(row.rrn);
     const reference = text(row.transaction_id_real) || rrn || text(row.invoice_number);
-    if (!reference) throw new Error(`Referensi QRIS baris ${index + 2} kosong.`);
+    if (!reference) throw new Error(`Referensi QRIS baris ${rowNumber} kosong.`);
     const mapping: HistoricalMapping = {
       ministryName: optionalText(row.ministry_name),
       eventName: optionalText(row.event_name),
@@ -154,7 +202,7 @@ function parseQris(
     } satisfies HistoricalRow;
   });
 
-  return { kind: "QRIS", source: "QRIS_XLSX", accountHolder, accountNumber, rows };
+  return { kind: "QRIS", source: "QRIS_XLSX", accountHolder, accountNumber, rows, skippedRows: skipped };
 }
 
 export function parseHistoricalWorkbook(
@@ -251,8 +299,46 @@ export async function stageHistoricalWorkbook(options: {
 
   return db.$transaction(async (tx) => {
     if (replaceExisting) {
-      await tx.transaction.deleteMany();
-      await tx.importBatch.deleteMany();
+      /**
+       * CAKUPAN PENGHAPUSAN (BUG #22).
+       * Dulu di sini ada `tx.transaction.deleteMany()` + `tx.importBatch.deleteMany()`
+       * TANPA filter apa pun: satu centang "ganti data lama" menghapus SELURUH tabel
+       * transaksi, termasuk saldo awal manual dan seluruh impor lain yang tidak berkaitan.
+       *
+       * Sekarang cakupannya dipersempit menjadi:
+       *   1. HANYA transaksi dengan sumber yang sama dengan workbook yang sedang diimpor
+       *      (MUTASI -> BANK_PDF, QRIS -> QRIS_XLSX), atau transaksi yang menempel pada
+       *      batch impor bersumber sama. Impor ulang workbook QRIS tidak lagi menghapus
+       *      data mutasi bank, dan sebaliknya.
+       *   2. TIDAK PERNAH menghapus saldo awal manual (`excludeOpeningBalanceWhere()`)
+       *      maupun transaksi MANUAL lain yang diinput tangan.
+       *   3. ImportBatch hanya dihapus untuk sumber yang sama DAN setelah tidak lagi
+       *      punya transaksi tersisa, supaya baris yang sengaja dipertahankan tidak
+       *      kehilangan jejak batch asalnya.
+       * Urutan penting: transaksi dihapus lebih dulu, baru batch — kalau dibalik, relasi
+       * `importBatchId` sudah ter-set null (onDelete: SetNull) dan tidak bisa dipakai lagi.
+       */
+      const replaceableBatches = await tx.importBatch.findMany({
+        where: { source: parsed.source },
+        select: { id: true },
+      });
+      const batchIds = replaceableBatches.map((item) => item.id);
+
+      await tx.transaction.deleteMany({
+        where: {
+          AND: [
+            excludeOpeningBalanceWhere(),
+            { NOT: { source: "MANUAL" } },
+            batchIds.length
+              ? { OR: [{ source: parsed.source }, { importBatchId: { in: batchIds } }] }
+              : { source: parsed.source },
+          ],
+        },
+      });
+
+      if (batchIds.length) {
+        await tx.importBatch.deleteMany({ where: { id: { in: batchIds }, transactions: { none: {} } } });
+      }
     }
 
     const hashes = [...new Set(prepared.map((item) => item.hash))];
@@ -317,6 +403,11 @@ export async function stageHistoricalWorkbook(options: {
       matched: batch.matchedRows,
       unmatched: batch.unmatchedRows,
       skipped: batch.skippedRows,
+      // Field TAMBAHAN: baris yang tidak bisa dibaca saat parsing. Wajib dilaporkan —
+      // sebelumnya baris rusak menggagalkan seluruh impor, sekarang dilewati diam-diam
+      // kalau angkanya tidak ikut dikembalikan ke pemanggil.
+      parseSkipped: parsed.skippedRows?.length ?? 0,
+      parseSkippedDetails: (parsed.skippedRows ?? []).slice(0, 20),
     };
   }, { timeout: 120_000 });
 }

@@ -1,4 +1,4 @@
-import { Download, FileText, Landmark } from "lucide-react";
+import { Download, FileText, Landmark, ReceiptText } from "lucide-react";
 import Link from "next/link";
 import { PageHeading } from "@/components/page-heading";
 import { ReportFilters } from "@/components/report-filters";
@@ -10,6 +10,9 @@ import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 type Params = Promise<{ start?: string; end?: string; event?: string }>;
+
+/** Tautan teks di dalam paragraf — globals.css sengaja membuat semua <a> mewarisi warna teks. */
+const inlineLinkStyle = { color: "var(--orange)", fontWeight: 800 } as const;
 
 const sourceLabel: Record<string, string> = {
   QRIS_XLSX: "QRIS",
@@ -55,11 +58,27 @@ export default async function ReportsPage({ searchParams }: { searchParams: Para
         <EventReportFilter events={eventOptions} current={eventId} />
 
         <section className="meeting-metrics-grid">
-          <div className="meeting-metric-card"><span>Pemasukan bruto</span><strong className="money-in">{rupiah.format(breakdown.income)}</strong><small>Event basis</small></div>
-          <div className="meeting-metric-card"><span>Potongan QRIS</span><strong className="money-fee">{rupiah.format(breakdown.qrisFee)}</strong><small>Akumulasi fee</small></div>
-          <div className="meeting-metric-card"><span>Pengeluaran</span><strong className="money-out">{rupiah.format(breakdown.expense)}</strong><small>Event basis</small></div>
+          <div className="meeting-metric-card"><span>Pemasukan bruto</span><strong className="money-in">{rupiah.format(breakdown.income)}</strong><small>Basis sama dengan tabel laporan: transaksi terverifikasi saja</small></div>
+          <div className="meeting-metric-card"><span>Potongan QRIS</span><strong className="money-fee">{rupiah.format(breakdown.qrisFee)}</strong><small>Akumulasi fee 0,7% per transaksi</small></div>
+          <div className="meeting-metric-card"><span>Pengeluaran</span><strong className="money-out">{rupiah.format(breakdown.expense)}</strong><small>Transaksi terverifikasi saja</small></div>
           <div className="meeting-metric-card"><span>Arus bersih</span><strong>{rupiah.format(breakdown.net)}</strong><small>Bruto - fee - pengeluaran</small></div>
         </section>
+
+        {breakdown.pending.total.count > 0 && (
+          <article className="guide-callout tone-warn">
+            <strong>{breakdown.pending.total.count} transaksi event ini belum masuk hitungan di atas</strong>
+            <p>
+              Angka event di halaman ini memakai basis yang sama persis dengan tabel laporan, yaitu hanya transaksi
+              yang sudah terverifikasi. Yang belum ikut terhitung:{" "}
+              <b>{breakdown.pending.unmatched.count} transaksi belum ditinjau</b> (masuk {rupiah.format(breakdown.pending.unmatched.income)}, keluar {rupiah.format(breakdown.pending.unmatched.expense)})
+              {breakdown.pending.skipped.count > 0 ? (
+                <> dan <b>{breakdown.pending.skipped.count} transaksi dilewati</b> (masuk {rupiah.format(breakdown.pending.skipped.income)}, keluar {rupiah.format(breakdown.pending.skipped.expense)})</>
+              ) : null}
+              . Neto yang belum terhitung {rupiah.format(breakdown.pending.total.net)}.{" "}
+              <Link style={inlineLinkStyle} href={`/transactions?status=UNMATCHED&eventId=${eventId}`}>Tinjau transaksi event ini →</Link>
+            </p>
+          </article>
+        )}
 
         <section className="guide-grid">
           <article className="panel guide-panel">
@@ -99,7 +118,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Para
         </section>
 
         <section className="panel table-panel">
-          <div className="panel-title"><div><span className="eyebrow">TRANSAKSI</span><h2>Daftar transaksi event ({breakdown.transactionCount})</h2></div></div>
+          <div className="panel-title"><div><span className="eyebrow">TRANSAKSI</span><h2>Daftar transaksi event ({breakdown.transactionCount}) <small className="report-title-note">Hanya yang sudah terverifikasi</small></h2></div></div>
           {breakdown.transactions.length ? (
             <div className="responsive-table">
               <table className="report-table responsive-report-table">
@@ -128,6 +147,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Para
 
   const totalIncome = data.ministryRows.reduce((sum, row) => sum + row.income, 0);
   const totalExpense = data.ministryRows.reduce((sum, row) => sum + row.expense, 0);
+  const totalMinistryQrisFee = data.ministryRows.reduce((sum, row) => sum + row.qrisFee, 0);
   const totalEventIncome = data.eventRows.reduce((sum, row) => sum + row.income, 0);
   const totalEventQrisFee = data.eventRows.reduce((sum, row) => sum + row.qrisFee, 0);
   const totalEventExpense = data.eventRows.reduce((sum, row) => sum + row.expense, 0);
@@ -223,35 +243,47 @@ export default async function ReportsPage({ searchParams }: { searchParams: Para
 
         <div className="meeting-metrics-grid meeting-metrics-grid-secondary">
           <div className="meeting-metric-card">
-            <span>Uang masuk rekening</span>
+            <span>Uang masuk rekening <em className="report-mini-tag">Semua status</em></span>
             <strong className="money-in">{rupiah.format(data.bankIncome)}</strong>
-            <small>Cash basis · mutasi bank</small>
+            <small>Seluruh mutasi bank di periode ini, terverifikasi maupun belum</small>
           </div>
           <div className="meeting-metric-card">
-            <span>Uang keluar rekening</span>
+            <span>Uang keluar rekening <em className="report-mini-tag">Semua status</em></span>
             <strong className="money-out">{rupiah.format(data.bankExpense)}</strong>
-            <small>Cash basis · mutasi bank</small>
+            <small>Seluruh mutasi bank di periode ini, terverifikasi maupun belum</small>
           </div>
           <div className="meeting-metric-card">
-            <span>Arus kas bersih</span>
+            <span>Arus kas bersih rekening</span>
             <strong>{rupiah.format(data.bankNet)}</strong>
-            <small>Masuk dikurangi keluar</small>
+            <small>Masuk dikurangi keluar · wajar berbeda dari total laporan di bawah</small>
           </div>
           <div className="meeting-metric-card">
             <span>Pemasukan event <em className="report-mini-tag">Bruto</em></span>
             <strong className="money-in">{rupiah.format(totalEventIncome)}</strong>
-            <small>Event basis</small>
+            <small>Hanya transaksi terverifikasi yang sudah punya event</small>
           </div>
           <div className="meeting-metric-card">
             <span>Potongan QRIS</span>
             <strong className="money-fee">{rupiah.format(totalEventQrisFee)}</strong>
-            <small>Akumulasi fee event</small>
+            <small>Akumulasi fee 0,7% per transaksi</small>
           </div>
           <div className="meeting-metric-card">
             <span>Arus bersih event <em className="report-mini-tag">Netto</em></span>
             <strong>{rupiah.format(totalEventNet)}</strong>
             <small>Bruto - fee - pengeluaran</small>
           </div>
+        </div>
+
+        <div className="meeting-highlight-table">
+          <article className="guide-callout">
+            <strong>Kenapa angka rekening dan angka laporan tidak sama?</strong>
+            <p>
+              Kartu <em>rekening</em> di atas memakai basis kas: semua mutasi bank yang masuk di periode ini, tanpa
+              memandang statusnya. Tabel laporan di bawah memakai basis pelaporan: hanya transaksi yang sudah
+              diverifikasi dan diberi kementerian. Keduanya memang tidak dirancang untuk sama —
+              selisihnya dijelaskan pada panel rekonsiliasi.
+            </p>
+          </article>
         </div>
 
         <div className="meeting-highlight-table responsive-table">
@@ -288,24 +320,92 @@ export default async function ReportsPage({ searchParams }: { searchParams: Para
 
       <section className="report-summary">
         <div>
-          <span>Total pemasukan <em className="report-mini-tag">Bruto</em></span>
+          <span>Total pemasukan laporan <em className="report-mini-tag">Bruto</em></span>
           <strong className="money-in">{rupiah.format(totalIncome)}</strong>
         </div>
         <div>
-          <span>Total pengeluaran</span>
+          <span>Total pengeluaran laporan</span>
           <strong className="money-out">{rupiah.format(totalExpense)}</strong>
         </div>
         <div>
-          <span>Arus kas bersih <em className="report-mini-tag">Netto</em></span>
+          <span>Selisih masuk - keluar <em className="report-mini-tag">Bruto</em></span>
           <strong>{rupiah.format(totalIncome - totalExpense)}</strong>
+        </div>
+        <div>
+          <span>Setelah potongan QRIS <em className="report-mini-tag">Netto</em></span>
+          <strong>{rupiah.format(totalIncome - totalMinistryQrisFee - totalExpense)}</strong>
         </div>
       </section>
 
       <section className="panel table-panel">
         <div className="panel-title">
           <div>
+            <span className="eyebrow">REKONSILIASI</span>
+            <h2>Belum masuk laporan <small className="report-title-note">Uangnya bergerak, angkanya belum terhitung</small></h2>
+          </div>
+          <Link className="button button-dark" href="/transactions?status=UNMATCHED">
+            <ReceiptText size={16} />
+            Tinjau sekarang
+          </Link>
+        </div>
+
+        <div className="meeting-metrics-grid">
+          <div className="meeting-metric-card">
+            <span>Belum ditinjau <em className="report-mini-tag">Unmatched</em></span>
+            <strong>{data.unassigned.unmatched.count} transaksi</strong>
+            <small>
+              Masuk {rupiah.format(data.unassigned.unmatched.income)} · Keluar {rupiah.format(data.unassigned.unmatched.expense)}
+              <br />Neto {rupiah.format(data.unassigned.unmatched.net)}
+            </small>
+          </div>
+          <div className="meeting-metric-card">
+            <span>Sengaja dilewati <em className="report-mini-tag">Skipped</em></span>
+            <strong>{data.unassigned.skipped.count} transaksi</strong>
+            <small>
+              Masuk {rupiah.format(data.unassigned.skipped.income)} · Keluar {rupiah.format(data.unassigned.skipped.expense)}
+              <br />Neto {rupiah.format(data.unassigned.skipped.net)}
+            </small>
+          </div>
+          <div className="meeting-metric-card">
+            <span>Terverifikasi tanpa kementerian</span>
+            <strong>{data.totals.untagged.count} transaksi</strong>
+            <small>
+              Neto {rupiah.format(data.totals.untagged.net)}
+              <br />Tidak muncul di tabel kementerian maupun tabel event
+            </small>
+          </div>
+          <div className="meeting-metric-card">
+            <span>Terverifikasi tanpa event</span>
+            <strong>{rupiah.format(data.totals.nonEvent.net)}</strong>
+            <small>
+              Masuk {rupiah.format(data.totals.nonEvent.income)} · Keluar {rupiah.format(data.totals.nonEvent.expense)}
+              <br />Masuk tabel kementerian, tidak masuk tabel event
+            </small>
+          </div>
+        </div>
+
+        <p className="table-panel-note" style={{ paddingTop: "1rem" }}>
+          {data.unassigned.total.count > 0 ? (
+            <>
+              <b>Total laporan di bawah BELUM mencakup {data.unassigned.total.count} transaksi ini</b> (neto {rupiah.format(data.unassigned.total.net)}).
+              Selama masih ada baris di sini, total laporan memang tidak akan sama dengan mutasi rekening — dan itu bukan berarti laporannya salah.{" "}
+              <Link style={inlineLinkStyle} href="/transactions?status=UNMATCHED">Buka daftar transaksi belum ditinjau →</Link>
+            </>
+          ) : (
+            <>Semua transaksi periode ini sudah ditinjau. Sisa selisih terhadap mutasi rekening hanya berasal dari transaksi terverifikasi yang belum diberi kementerian atau event (dua kartu terakhir di atas).</>
+          )}
+          <br />
+          Catatan basis: tabel <em>per kementerian</em> menghitung semua transaksi terverifikasi yang punya kementerian, termasuk yang belum diberi event;
+          tabel <em>per event</em> hanya menghitung yang sudah punya event. Karena itu total kedua tabel memang berbeda, tepat sebesar angka pada dua kartu terakhir di atas.
+          Bandingkan kolom &ldquo;Netto&rdquo; di kedua tabel — kolom &ldquo;Bruto&rdquo; belum dikurangi potongan QRIS.
+        </p>
+      </section>
+
+      <section className="panel table-panel">
+        <div className="panel-title">
+          <div>
             <span className="eyebrow">REKAP UTAMA</span>
-            <h2>Arus kas per kementerian</h2>
+            <h2>Arus kas per kementerian <small className="report-title-note">Termasuk transaksi tanpa event</small></h2>
           </div>
         </div>
         {data.ministryRows.length ? (
@@ -317,7 +417,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: Para
                   <th>Kementerian</th>
                   <th>Pemasukan</th>
                   <th>Pengeluaran</th>
-                  <th>Arus bersih</th>
+                  <th>Potongan QRIS</th>
+                  <th>Arus bersih<br /><small>Bruto</small></th>
+                  <th>Arus bersih<br /><small>Netto</small></th>
                 </tr>
               </thead>
               <tbody>
@@ -327,20 +429,26 @@ export default async function ReportsPage({ searchParams }: { searchParams: Para
                     <td data-label="Kementerian"><strong>{row.ministry}</strong></td>
                     <td className="money-in" data-label="Pemasukan">{rupiah.format(row.income)}</td>
                     <td className="money-out" data-label="Pengeluaran">{rupiah.format(row.expense)}</td>
-                    <td data-label="Arus bersih"><strong>{rupiah.format(row.net)}</strong></td>
+                    <td className="money-fee" data-label="Potongan QRIS">{rupiah.format(row.qrisFee)}</td>
+                    <td data-label="Arus bersih bruto">{rupiah.format(row.net)}</td>
+                    <td data-label="Arus bersih netto"><strong>{rupiah.format(row.netAfterFee)}</strong></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : <Empty />}
+        <p className="table-panel-note">
+          Kolom <em>Bruto</em> belum dikurangi potongan QRIS, kolom <em>Netto</em> sudah — angka Netto inilah yang sebanding dengan
+          &ldquo;Arus bersih&rdquo; pada tabel event di bawah. Ekspor Excel masih memakai kolom Bruto.
+        </p>
       </section>
 
       <section className="panel table-panel">
         <div className="panel-title">
           <div>
             <span className="eyebrow">RINCIAN KEGIATAN</span>
-            <h2>Arus kas per event <small className="report-title-note">Bruto → Potongan → Netto</small></h2>
+            <h2>Arus kas per event <small className="report-title-note">Bruto → Potongan → Netto · hanya transaksi yang punya event</small></h2>
           </div>
         </div>
 
@@ -397,6 +505,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Para
             </table>
           </div>
         ) : <Empty />}
+        <p className="table-panel-note">
+          Tabel ini hanya memuat transaksi terverifikasi yang sudah diberi event, sehingga totalnya lebih kecil dari tabel per kementerian.
+          Baris jenis pemasukan bertanda &ldquo;—&rdquo; bernilai nol dan hanya penanda bahwa event tersebut belum punya pemasukan.
+        </p>
       </section>
     </div>
   );

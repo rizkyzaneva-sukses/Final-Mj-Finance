@@ -65,58 +65,198 @@ function keywordSimilarity(kwA: string[], kwB: string[]): number {
   return union === 0 ? 0 : intersection / union;
 }
 
+const DUPLICATE_SIMILARITY_THRESHOLD = 0.6;
+/** Referensi yang terlalu pendek (mis. "-", "0") tidak cukup unik untuk dijadikan bukti duplikat. */
+const MIN_REFERENCE_LENGTH = 4;
+
+export type DuplicateCandidate = {
+  id: string;
+  source: TransactionSource;
+  description: string;
+  direction: TransactionDirection;
+  amount: Prisma.Decimal | number;
+  transactionDate: Date;
+  accountNumber: string | null;
+  sourceReference: string | null;
+};
+
+export type DuplicateIndex = {
+  byReference: Map<string, DuplicateCandidate[]>;
+  byAccount: Map<string, DuplicateCandidate[]>;
+};
+
+function toNumber(value: Prisma.Decimal | number) {
+  return typeof value === "number" ? value : Number(value.toString());
+}
+
+function normalizeReference(value: string | null | undefined) {
+  const cleaned = String(value || "").trim().toUpperCase();
+  return cleaned.length >= MIN_REFERENCE_LENGTH ? cleaned : null;
+}
+
+const DAY_MS = 86_400_000;
+const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+/**
+ * Rentang toleransi ±1 hari penuh di sekitar sebuah tanggal transaksi, dihitung
+ * dalam WIB tanpa bergantung pada zona waktu server.
+ *
+ * `setHours(0,0,0,0)` memakai zona waktu proses: di container UTC batas harinya
+ * meleset 7 jam, sehingga transaksi menjelang tengah malam WIB bisa lolos dari
+ * jendela pembanding dan tidak terdeteksi sebagai duplikat.
+ */
+function dayWindow(date: Date) {
+  // Geser +7 jam supaya komponen UTC-nya menjadi wall clock WIB.
+  const wib = new Date(date.getTime() + WIB_OFFSET_MS);
+  const startOfDay = Date.UTC(wib.getUTCFullYear(), wib.getUTCMonth(), wib.getUTCDate()) - WIB_OFFSET_MS;
+  return {
+    from: new Date(startOfDay - DAY_MS),
+    to: new Date(startOfDay + 2 * DAY_MS - 1),
+  };
+}
+
+/**
+ * Keputusan apakah `candidate` adalah transaksi yang sama dengan `row`.
+ * Dua jalur pembuktian:
+ *  1. Referensi sumber identik (mis. RRN/TRANSACTION_ID QRIS) — berlaku walaupun
+ *     `source` kedua baris sama, karena baris QRIS yang sama bisa masuk lewat dua
+ *     jalur impor berbeda dan menghasilkan fingerprint berbeda.
+ *  2. Sumber berbeda + rekening sama + deskripsi mirip (≥60% irisan kata kunci).
+ * Keduanya tetap wajib sama arah, sama nominal, dan berjarak maksimal ±1 hari.
+ */
+function isSameTransaction(row: NormalizedTransaction, candidate: DuplicateCandidate) {
+  if (candidate.direction !== row.direction) return false;
+  if (toNumber(candidate.amount) !== row.amount) return false;
+  const { from, to } = dayWindow(row.transactionDate);
+  if (candidate.transactionDate < from || candidate.transactionDate > to) return false;
+
+  const rowReference = normalizeReference(row.sourceReference);
+  const candidateReference = normalizeReference(candidate.sourceReference);
+  if (rowReference && candidateReference && rowReference === candidateReference) return true;
+
+  // Sumber sama tanpa referensi yang cocok: biarkan fingerprint yang menangani.
+  if (candidate.source === row.source) return false;
+  if (!row.accountNumber || !candidate.accountNumber) return false;
+  if (candidate.accountNumber !== row.accountNumber) return false;
+
+  const similarity = keywordSimilarity(
+    normalizeDescriptionKeywords(row.description),
+    normalizeDescriptionKeywords(candidate.description),
+  );
+  return similarity >= DUPLICATE_SIMILARITY_THRESHOLD;
+}
+
+/**
+ * Ambil sekali jalan seluruh kandidat duplikat untuk sekumpulan baris.
+ * Dipisah jadi dua query yang sama-sama selektif (referensi dan rekening) supaya
+ * tidak menimbulkan N+1 saat mengimpor file besar.
+ */
+export async function loadDuplicateCandidates(
+  rows: NormalizedTransaction[],
+  options?: { excludeBatchId?: string | null },
+): Promise<DuplicateCandidate[]> {
+  if (!rows.length) return [];
+
+  let earliest = rows[0].transactionDate.getTime();
+  let latest = earliest;
+  for (const row of rows) {
+    const time = row.transactionDate.getTime();
+    if (time < earliest) earliest = time;
+    if (time > latest) latest = time;
+  }
+  const from = dayWindow(new Date(earliest)).from;
+  const to = dayWindow(new Date(latest)).to;
+  const directions = [...new Set(rows.map((row) => row.direction))];
+  const amounts = [...new Set(rows.map((row) => row.amount))];
+
+  // `in` bersifat case-sensitive, jadi sertakan beberapa varian penulisan referensi.
+  const references = new Set<string>();
+  for (const row of rows) {
+    const raw = String(row.sourceReference || "").trim();
+    if (raw.length < MIN_REFERENCE_LENGTH) continue;
+    references.add(raw);
+    references.add(raw.toUpperCase());
+    references.add(raw.toLowerCase());
+  }
+  const accountNumbers = [...new Set(rows.map((row) => row.accountNumber).filter((value): value is string => !!value))];
+
+  const scope = {
+    isDraft: false,
+    direction: { in: directions },
+    amount: { in: amounts },
+    transactionDate: { gte: from, lte: to },
+    ...(options?.excludeBatchId ? { importBatchId: { not: options.excludeBatchId } } : {}),
+  };
+
+  const queries: Promise<DuplicateCandidate[]>[] = [];
+  if (references.size) {
+    queries.push(db.transaction.findMany({
+      where: { ...scope, sourceReference: { in: [...references] } },
+      select: { id: true, source: true, description: true, direction: true, amount: true, transactionDate: true, accountNumber: true, sourceReference: true },
+    }));
+  }
+  if (accountNumbers.length) {
+    queries.push(db.transaction.findMany({
+      where: { ...scope, accountNumber: { in: accountNumbers } },
+      select: { id: true, source: true, description: true, direction: true, amount: true, transactionDate: true, accountNumber: true, sourceReference: true },
+    }));
+  }
+  if (!queries.length) return [];
+
+  const unique = new Map<string, DuplicateCandidate>();
+  for (const list of await Promise.all(queries)) {
+    for (const candidate of list) unique.set(candidate.id, candidate);
+  }
+  return [...unique.values()];
+}
+
+export function buildDuplicateIndex(candidates: DuplicateCandidate[]): DuplicateIndex {
+  const byReference = new Map<string, DuplicateCandidate[]>();
+  const byAccount = new Map<string, DuplicateCandidate[]>();
+  for (const candidate of candidates) {
+    const reference = normalizeReference(candidate.sourceReference);
+    if (reference) byReference.set(reference, [...(byReference.get(reference) ?? []), candidate]);
+    if (candidate.accountNumber) byAccount.set(candidate.accountNumber, [...(byAccount.get(candidate.accountNumber) ?? []), candidate]);
+  }
+  return { byReference, byAccount };
+}
+
+/** Cari duplikat lintas-sumber untuk satu baris di dalam indeks kandidat yang sudah dimuat. */
+export function matchDuplicate(
+  row: NormalizedTransaction,
+  index: DuplicateIndex,
+): { id: string; source: TransactionSource } | null {
+  const reference = normalizeReference(row.sourceReference);
+  const pools = [
+    reference ? index.byReference.get(reference) : undefined,
+    row.accountNumber ? index.byAccount.get(row.accountNumber) : undefined,
+  ];
+  const checked = new Set<string>();
+  for (const pool of pools) {
+    for (const candidate of pool ?? []) {
+      if (checked.has(candidate.id)) continue;
+      checked.add(candidate.id);
+      if (isSameTransaction(row, candidate)) return { id: candidate.id, source: candidate.source };
+    }
+  }
+  return null;
+}
+
 /**
  * Find a potential fuzzy duplicate among existing non-draft transactions.
- * Matches on: same accountNumber, same date (±1 day), same amount, ≥60% description keyword overlap.
- * Returns the matched transaction record or null.
+ * Versi satu-baris dari {@link matchDuplicate}; untuk banyak baris pakai
+ * {@link loadDuplicateCandidates} + {@link buildDuplicateIndex} agar tidak N+1.
  */
 export async function findPotentialDuplicate(
   row: NormalizedTransaction,
+  options?: { excludeBatchId?: string | null },
 ): Promise<{ id: string; source: TransactionSource } | null> {
-  if (!row.accountNumber) return null;
+  const candidates = await loadDuplicateCandidates([row], options);
+  return matchDuplicate(row, buildDuplicateIndex(candidates));
+}
 
-  const dateFrom = new Date(row.transactionDate);
-  dateFrom.setDate(dateFrom.getDate() - 1);
-  const dateTo = new Date(row.transactionDate);
-  dateTo.setDate(dateTo.getDate() + 1);
-  // Ensure time bounds cover full days
-  dateFrom.setHours(0, 0, 0, 0);
-  dateTo.setHours(23, 59, 59, 999);
-
-  const candidates = await db.transaction.findMany({
-    where: {
-      isDraft: false,
-      accountNumber: row.accountNumber,
-      direction: row.direction,
-      amount: row.amount,
-      transactionDate: {
-        gte: dateFrom,
-        lte: dateTo,
-      },
-    },
-    select: {
-      id: true,
-      source: true,
-      description: true,
-    },
-    take: 20,
-  });
-
-  const incomingKeywords = normalizeDescriptionKeywords(row.description);
-
-  for (const candidate of candidates) {
-    // Skip if same source – that's handled by fingerprint
-    if (candidate.source === row.source) continue;
-
-    const candidateKeywords = normalizeDescriptionKeywords(candidate.description);
-    const similarity = keywordSimilarity(incomingKeywords, candidateKeywords);
-
-    if (similarity >= 0.6) {
-      return { id: candidate.id, source: candidate.source };
-    }
-  }
-
-  return null;
+export function duplicateSkipReason(duplicate: { id: string; source: TransactionSource }) {
+  return `Duplikasi dari sumber lain (duplikasi dari transaksi ${duplicate.id} yang berasal dari ${duplicate.source})`;
 }
 
 type MatchableIncomeType = IncomeType & { event: Event };
@@ -129,27 +269,46 @@ export function findIncomeMatch(amount: number, incomeTypes: MatchableIncomeType
     .find((type) => wholeAmount.endsWith(type.uniqueCode!));
 }
 
+/** Batas aman jumlah baris per `createMany` agar tidak melebihi batas parameter database. */
+const CREATE_CHUNK_SIZE = 500;
+
 async function persistTransactions(batchId: string, rows: NormalizedTransaction[], isDraft: boolean) {
+  const counts = { imported: 0, duplicate: 0, matched: 0, unmatched: 0, skipped: 0, fuzzyDuplicate: 0 };
+  if (!rows.length) return counts;
+
   const incomeTypes = await db.incomeType.findMany({
     where: { active: true, uniqueCode: { not: null } },
     include: { event: true },
   });
-  const counts = { imported: 0, duplicate: 0, matched: 0, unmatched: 0, skipped: 0, fuzzyDuplicate: 0 };
 
-  for (const row of rows) {
-    const hash = fingerprint(row);
-    const exists = await db.transaction.findUnique({ where: { fingerprint: hash }, select: { id: true } });
-    if (exists) {
+  // 1) Cek fingerprint sekali jalan (dulu satu `findUnique` per baris = N+1).
+  const prepared = rows.map((row) => ({ row, hash: fingerprint(row) }));
+  const existing = await db.transaction.findMany({
+    where: { fingerprint: { in: [...new Set(prepared.map((item) => item.hash))] } },
+    select: { fingerprint: true },
+  });
+  const seenHashes = new Set(existing.map((item) => item.fingerprint));
+
+  const fresh: typeof prepared = [];
+  for (const item of prepared) {
+    if (seenHashes.has(item.hash)) {
       counts.duplicate++;
       continue;
     }
+    seenHashes.add(item.hash);
+    fresh.push(item);
+  }
 
-    // Fuzzy duplicate detection: only for finalized (non-draft) imports
-    let fuzzyDupe: { id: string; source: TransactionSource } | null = null;
-    if (!isDraft) {
-      fuzzyDupe = await findPotentialDuplicate(row);
-    }
+  // 2) Deteksi duplikat lintas-sumber. Kandidat selalu hanya baris non-draft
+  //    (dan bukan milik batch ini), jadi sesama baris draft di batch yang sama
+  //    tidak akan saling dianggap duplikat.
+  const duplicateIndex = buildDuplicateIndex(
+    await loadDuplicateCandidates(fresh.map((item) => item.row), { excludeBatchId: batchId }),
+  );
 
+  const payloads: Prisma.TransactionCreateManyInput[] = [];
+  for (const { row, hash } of fresh) {
+    const fuzzyDupe = matchDuplicate(row, duplicateIndex);
     const isBatchQris = row.description.toUpperCase().includes(BATCH_QRIS_MARKER);
 
     // Determine status and skipReason
@@ -158,7 +317,7 @@ async function persistTransactions(batchId: string, rows: NormalizedTransaction[
 
     if (fuzzyDupe) {
       status = "SKIPPED";
-      skipReason = `Duplikasi dari sumber lain (duplikasi dari transaksi ${fuzzyDupe.id} yang berasal dari ${fuzzyDupe.source})`;
+      skipReason = duplicateSkipReason(fuzzyDupe);
     } else if (isBatchQris) {
       status = "SKIPPED";
       skipReason = "Gabungan pencairan QRIS, detail dihitung dari file QRIS.";
@@ -176,26 +335,29 @@ async function persistTransactions(batchId: string, rows: NormalizedTransaction[
       skipReason = null;
     }
 
-    await db.transaction.create({
-      data: {
-        ...row,
-        fingerprint: hash,
-        importBatchId: batchId,
-        isDraft,
-        status,
-        skipReason,
-        ministryId: match?.event.ministryId,
-        eventId: match?.eventId,
-        incomeTypeId: match?.id,
-        assignedAt: match ? new Date() : null,
-        assignedByRole: match ? "SYSTEM" : null,
-      },
+    payloads.push({
+      ...row,
+      fingerprint: hash,
+      importBatchId: batchId,
+      isDraft,
+      status,
+      skipReason,
+      ministryId: match?.event.ministryId,
+      eventId: match?.eventId,
+      incomeTypeId: match?.id,
+      assignedAt: match ? new Date() : null,
+      assignedByRole: match ? "SYSTEM" : null,
     });
     counts.imported++;
     if (status === "MATCHED") counts.matched++;
     if (status === "UNMATCHED") counts.unmatched++;
     if (status === "SKIPPED") counts.skipped++;
     if (fuzzyDupe) counts.fuzzyDuplicate++;
+  }
+
+  // 3) Simpan massal (dulu satu `create` per baris = N+1).
+  for (let start = 0; start < payloads.length; start += CREATE_CHUNK_SIZE) {
+    await db.transaction.createMany({ data: payloads.slice(start, start + CREATE_CHUNK_SIZE) });
   }
 
   return counts;
@@ -205,22 +367,79 @@ export async function stageImportTransactions(batchId: string, rows: NormalizedT
   return persistTransactions(batchId, rows, true);
 }
 
+/**
+ * Jadikan seluruh baris draft milik sebuah batch sebagai transaksi final.
+ *
+ * Sebelum di-flip, duplikat lintas-sumber dicek ulang sebagai jaring pengaman:
+ * batch lain bisa saja difinalisasi setelah batch ini di-staging, sehingga saat
+ * staging baris pembandingnya masih draft dan belum terlihat. Hanya baris yang
+ * belum diputuskan manusia (`assignedByRole` kosong atau "SYSTEM") yang disentuh,
+ * supaya keputusan manual reviewer tidak pernah ditimpa.
+ */
 export async function finalizeImportBatch(batchId: string) {
-  return db.transaction.updateMany({
+  const pending = await db.transaction.findMany({
+    where: {
+      importBatchId: batchId,
+      isDraft: true,
+      status: { not: "SKIPPED" },
+      OR: [{ assignedByRole: null }, { assignedByRole: "SYSTEM" }],
+    },
+    select: {
+      id: true,
+      transactionDate: true,
+      description: true,
+      amount: true,
+      direction: true,
+      source: true,
+      accountHolder: true,
+      accountNumber: true,
+      sourceReference: true,
+    },
+  });
+
+  let duplicateSkipped = 0;
+  if (pending.length) {
+    const candidates = pending.map((item) => ({ id: item.id, row: { ...item, amount: toNumber(item.amount) } }));
+    const duplicateIndex = buildDuplicateIndex(
+      await loadDuplicateCandidates(candidates.map((item) => item.row), { excludeBatchId: batchId }),
+    );
+    for (const { id, row } of candidates) {
+      const duplicate = matchDuplicate(row, duplicateIndex);
+      if (!duplicate) continue;
+      await db.transaction.update({
+        where: { id },
+        data: {
+          status: "SKIPPED",
+          skipReason: duplicateSkipReason(duplicate),
+          ministryId: null,
+          eventId: null,
+          incomeTypeId: null,
+          expenseTypeId: null,
+          assignedAt: null,
+          assignedByRole: "SYSTEM",
+        },
+      });
+      duplicateSkipped++;
+    }
+  }
+
+  const result = await db.transaction.updateMany({
     where: { importBatchId: batchId, isDraft: true },
     data: { isDraft: false },
   });
+  return { count: result.count, duplicateSkipped };
 }
 
-/** Recalculate matched/unmatched/skipped counts for a batch from actual transaction data. */
+/** Recalculate imported/matched/unmatched/skipped counts for a batch from actual transaction data. */
 export async function recalculateBatchStats(batchId: string) {
-  const [matched, unmatched, skipped] = await Promise.all([
+  const [imported, matched, unmatched, skipped] = await Promise.all([
+    db.transaction.count({ where: { importBatchId: batchId } }),
     db.transaction.count({ where: { importBatchId: batchId, status: "MATCHED" } }),
     db.transaction.count({ where: { importBatchId: batchId, status: "UNMATCHED" } }),
     db.transaction.count({ where: { importBatchId: batchId, status: "SKIPPED" } }),
   ]);
   await db.importBatch.update({
     where: { id: batchId },
-    data: { matchedRows: matched, unmatchedRows: unmatched, skippedRows: skipped },
+    data: { importedRows: imported, matchedRows: matched, unmatchedRows: unmatched, skippedRows: skipped },
   });
 }

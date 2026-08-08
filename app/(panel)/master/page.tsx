@@ -4,6 +4,7 @@ import { MasterManager } from "@/components/master-manager";
 import { PageHeading } from "@/components/page-heading";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { toDateInput } from "@/lib/format";
 import { OPENING_BALANCE_PREFIX } from "@/lib/opening-balance";
 
 export const dynamic = "force-dynamic";
@@ -63,7 +64,12 @@ export default async function MasterPage() {
     accountHolder: row.accountHolder || "",
     accountNumber: row.accountNumber || null,
     amount: Number(row.amount),
-    transactionDate: row.transactionDate.toISOString().slice(0, 10),
+    // Saldo awal minus disimpan sebagai amount positif + direction OUT (lihat app/api/opening-balances/route.ts),
+    // supaya konvensi "IN = +, OUT = -" di seluruh perhitungan saldo tetap berlaku.
+    direction: row.direction,
+    // toDateInput menghitung dalam WIB. row.transactionDate.toISOString() akan menggeser
+    // tanggal mundur satu hari karena 00:00 WIB = 17:00 UTC hari sebelumnya.
+    transactionDate: toDateInput(row.transactionDate),
     note: typeof row.rawData === "object" && row.rawData && "note" in row.rawData && typeof row.rawData.note === "string" ? row.rawData.note : null,
   }));
   return <div className="page-stack"><PageHeading eyebrow="KAMUS KEUANGAN" title="Atur kode, lalu biarkan sistem bekerja." description="Setiap jenis pemasukan memiliki kode akhir nominal yang unik. Kode kementerian tidak memakai nol di depan." icon={<Building2 size={26} />} /><MasterManager ministries={data} incomeMasters={incomeMasters} expenseTypes={expenseTypes} openingBalances={openingBalanceData} /></div>;

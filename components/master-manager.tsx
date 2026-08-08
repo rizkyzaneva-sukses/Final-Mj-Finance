@@ -17,6 +17,8 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
+import { rupiah } from "@/lib/format";
+import { parseIdrInput } from "@/lib/money";
 
 type IncomeType = { id: string; name: string; uniqueCode: string | null; incomeMasterId: string | null; incomeMasterName: string; active: boolean; eventId: string };
 type EventDoc = { id: string; fileName: string; mimeType: string; size: number; note: string | null; uploadedAt: string; uploadedByRole: string | null };
@@ -24,7 +26,9 @@ type Event = { id: string; name: string; category: string | null; active: boolea
 type Ministry = { id: string; code: number; name: string; active: boolean; events: Event[] };
 type IncomeMaster = { id: string; name: string; active: boolean };
 type ExpenseType = { id: string; name: string; active: boolean };
-type OpeningBalance = { id: string; accountHolder: string; accountNumber: string | null; amount: number; transactionDate: string; note: string | null };
+// `direction` opsional: kolom `amount` selalu positif, arahnya disimpan terpisah.
+// Saat halaman induk belum mengirimkannya, nominal diperlakukan sebagai positif (perilaku lama).
+type OpeningBalance = { id: string; accountHolder: string; accountNumber: string | null; amount: number; direction?: "IN" | "OUT"; transactionDate: string; note: string | null };
 
 type Tab = "ministry" | "event" | "incomeMapping" | "incomeMaster" | "expenseType";
 
@@ -88,8 +92,42 @@ type EditState =
   | { entity: "openingBalance"; id: string; accountHolder: string; accountNumber: string; amount: string; transactionDate: string; note: string }
   | null;
 
-const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
+const rupiahPrecise = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const dateLabel = new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+
+/** Nominal saldo awal boleh minus dan boleh berdesimal, jadi `rupiah` (0 desimal) hanya dipakai untuk nilai bulat. */
+function formatAmount(value: number) {
+  return Number.isInteger(value) ? rupiah.format(value) : rupiahPrecise.format(value);
+}
+
+function signedOpeningAmount(row: OpeningBalance) {
+  return row.direction === "OUT" ? -Math.abs(row.amount) : row.amount;
+}
+
+/** Preview hasil parsing input nominal supaya user tahu angka yang benar-benar tersimpan. */
+function amountPreview(raw: string): { tone: "ok" | "error"; text: string } | null {
+  if (!String(raw || "").trim()) return null;
+  const value = parseIdrInput(raw);
+  if (value === null) return { tone: "error", text: "Format nominal belum dikenali. Contoh: 1.500.000 atau -250.000,75." };
+  if (value === 0) return { tone: "error", text: "Nominal saldo awal tidak boleh nol." };
+  return { tone: "ok", text: value < 0 ? `${formatAmount(value)} · dicatat sebagai saldo minus` : formatAmount(value) };
+}
+
+/** Biarkan user mengetik format Indonesia (titik ribuan, koma desimal) dan tanda minus di depan. */
+function sanitizeAmountInput(raw: string) {
+  const cleaned = raw.replace(/[^\d.,-]/g, "");
+  const negative = cleaned.startsWith("-");
+  return `${negative ? "-" : ""}${cleaned.replace(/-/g, "")}`;
+}
+
+function AmountPreview({ raw }: { raw: string }) {
+  const preview = amountPreview(raw);
+  if (!preview) return <small>Boleh pakai titik ribuan, koma desimal, dan tanda minus. Contoh: -1.500.000,50</small>;
+  if (preview.tone === "error") return <small className="form-error">{preview.text}</small>;
+  return <small>Terbaca: <b>{preview.text}</b></small>;
+}
+
+const UNIQUE_CODE_HINT = "Minimal 3 digit, maksimal 8, tanpa nol di depan. Rp100.121 akan cocok dengan kode 121. Kode 1-2 digit dilarang karena cocok dengan hampir semua nominal, begitu juga kode yang menjadi akhiran kode lain (mis. 21 vs 121).";
 
 export function MasterManager({
   ministries,
@@ -290,7 +328,7 @@ export function MasterManager({
         id: row.id,
         accountHolder: row.accountHolder,
         accountNumber: row.accountNumber || "",
-        amount: String(row.amount),
+        amount: String(signedOpeningAmount(row)),
         transactionDate: row.transactionDate,
         note: row.note || "",
       });
@@ -458,7 +496,7 @@ export function MasterManager({
         {tab === "incomeMapping" && <>
           <label>Event<select value={form.eventId || ""} onChange={(e) => setForm({ ...form, eventId: e.target.value })} required><option value="">Pilih event...</option>{events.map((row) => <option key={row.id} value={row.id}>{row.ministry.code} · {row.ministry.name} / {row.name}</option>)}</select></label>
           <label>Master pemasukan<select value={form.incomeMasterId || ""} onChange={(e) => setForm({ ...form, incomeMasterId: e.target.value })} required><option value="">Pilih master pemasukan...</option>{incomeMasters.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
-          <label>Kode unik akhir nominal<input inputMode="numeric" pattern="0|[1-9][0-9]*" maxLength={8} value={form.uniqueCode || ""} onChange={(e) => setForm({ ...form, uniqueCode: e.target.value.replace(/\D/g, "") })} placeholder="Contoh: 121" required /><small>Tanpa nol di depan. Rp100.121 akan cocok dengan kode 121.</small></label>
+          <label>Kode unik akhir nominal<input inputMode="numeric" pattern="[1-9][0-9]{2,7}" minLength={3} maxLength={8} title="Kode unik 3-8 digit, tidak boleh diawali nol." value={form.uniqueCode || ""} onChange={(e) => setForm({ ...form, uniqueCode: e.target.value.replace(/\D/g, "").slice(0, 8) })} placeholder="Contoh: 121" required /><small>{UNIQUE_CODE_HINT}</small></label>
         </>}
         {tab === "expenseType" && <label>Nama jenis pengeluaran<input value={form.name || ""} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Contoh: Transport & Ongkir" required /></label>}
         {error && <div className="form-error">{error}</div>}
@@ -492,7 +530,7 @@ export function MasterManager({
         <label>Nama pemilik rekening<input value={openingForm.accountHolder || ""} onChange={(e) => setOpeningForm({ ...openingForm, accountHolder: e.target.value })} placeholder="Muhammad Rizky / Sugiarsa" required /></label>
         <label>Nomor rekening (opsional)<input inputMode="numeric" value={openingForm.accountNumber || ""} onChange={(e) => setOpeningForm({ ...openingForm, accountNumber: e.target.value.replace(/\D/g, "") })} placeholder="Contoh: 0590040242" /></label>
         <label>Tanggal saldo awal<input type="date" value={openingForm.transactionDate || ""} onChange={(e) => setOpeningForm({ ...openingForm, transactionDate: e.target.value })} required /></label>
-        <label>Nominal saldo awal<input inputMode="numeric" value={openingForm.amount || ""} onChange={(e) => setOpeningForm({ ...openingForm, amount: e.target.value.replace(/\D/g, "") })} placeholder="Contoh: 1500000" required /></label>
+        <label>Nominal saldo awal<input inputMode="text" value={openingForm.amount || ""} onChange={(e) => setOpeningForm({ ...openingForm, amount: sanitizeAmountInput(e.target.value) })} placeholder="Contoh: 1.500.000 atau -250.000" required /><AmountPreview raw={openingForm.amount || ""} /></label>
         <label>Catatan (opsional)<input value={openingForm.note || ""} onChange={(e) => setOpeningForm({ ...openingForm, note: e.target.value })} placeholder="Saldo per tanggal awal pencatatan" /></label>
         {openingError && <div className="form-error">{openingError}</div>}
         <button className="button button-primary button-wide" disabled={openingLoading}>{openingLoading ? <LoaderCircle className="spin" /> : <Plus />} Simpan saldo awal</button>
@@ -626,7 +664,7 @@ export function MasterManager({
               {openingBalances.length ? openingBalances.map((row) => <tr key={row.id}>
                 <td><strong>{row.accountHolder}</strong><small>{row.accountNumber || "Nomor rekening belum diisi"}</small></td>
                 <td><strong>{dateLabel.format(new Date(`${row.transactionDate}T00:00:00+07:00`))}</strong></td>
-                <td><strong>{rupiah.format(row.amount)}</strong></td>
+                <td><strong>{formatAmount(signedOpeningAmount(row))}</strong></td>
                 <td><small className="opening-balance-note">{row.note || "Tanpa catatan"}</small></td>
                 <td className="row-actions">
                   <button className="icon-button" onClick={() => startEdit(row, "openingBalance")}><Pencil /></button>
@@ -701,13 +739,13 @@ export function MasterManager({
           {editing.entity === "income" && <>
             <label>Event<select value={editing.eventId} onChange={(e) => setEditing({ ...editing, eventId: e.target.value })}><option value="">Pilih event...</option>{editEvents.map((row) => <option key={row.id} value={row.id}>{row.ministry.code} · {row.ministry.name} / {row.name}</option>)}</select></label>
             <label>Master pemasukan<select value={editing.incomeMasterId} onChange={(e) => setEditing({ ...editing, incomeMasterId: e.target.value })}><option value="">Pilih master pemasukan...</option>{incomeMasters.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
-            <label>Kode unik<input inputMode="numeric" maxLength={8} value={editing.uniqueCode} onChange={(e) => setEditing({ ...editing, uniqueCode: e.target.value.replace(/\D/g, "") })} /></label>
+            <label>Kode unik<input inputMode="numeric" pattern="[1-9][0-9]{2,7}" minLength={3} maxLength={8} title="Kode unik 3-8 digit, tidak boleh diawali nol." value={editing.uniqueCode} onChange={(e) => setEditing({ ...editing, uniqueCode: e.target.value.replace(/\D/g, "").slice(0, 8) })} /><small>{UNIQUE_CODE_HINT}</small></label>
           </>}
           {editing.entity === "openingBalance" && <>
             <label>Nama pemilik rekening<input value={editing.accountHolder} onChange={(e) => setEditing({ ...editing, accountHolder: e.target.value })} /></label>
             <label>Nomor rekening (opsional)<input inputMode="numeric" value={editing.accountNumber} onChange={(e) => setEditing({ ...editing, accountNumber: e.target.value.replace(/\D/g, "") })} /></label>
             <label>Tanggal saldo awal<input type="date" value={editing.transactionDate} onChange={(e) => setEditing({ ...editing, transactionDate: e.target.value })} /></label>
-            <label>Nominal saldo awal<input inputMode="numeric" value={editing.amount} onChange={(e) => setEditing({ ...editing, amount: e.target.value.replace(/\D/g, "") })} /></label>
+            <label>Nominal saldo awal<input inputMode="text" value={editing.amount} onChange={(e) => setEditing({ ...editing, amount: sanitizeAmountInput(e.target.value) })} placeholder="Contoh: 1.500.000 atau -250.000" /><AmountPreview raw={editing.amount} /></label>
             <label>Catatan (opsional)<input value={editing.note} onChange={(e) => setEditing({ ...editing, note: e.target.value })} /></label>
           </>}
           {editing.entity === "incomeMaster" && <label>Nama master pemasukan<input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></label>}

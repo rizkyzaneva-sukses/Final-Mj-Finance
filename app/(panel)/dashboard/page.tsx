@@ -4,6 +4,7 @@ import { PageHeading } from "@/components/page-heading";
 import { QrisResetButton } from "@/components/qris-reset-button";
 import { ReconciliationTrigger } from "@/components/reconciliation-trigger";
 import { DashboardFilters } from "@/components/dashboard-filters";
+import { BANK_SOURCES, TRACKED_ACCOUNTS, excludeOpeningBalanceWhere, holderMatches } from "@/lib/accounts";
 import { db } from "@/lib/db";
 import { compactRupiah, dateId, periodBounds, rupiah } from "@/lib/format";
 import { getBalanceEstimateSummary } from "@/lib/meeting-report";
@@ -13,15 +14,36 @@ export const dynamic = "force-dynamic";
 
 type SearchParams = Promise<{ start?: string; end?: string }>;
 
+/** Urutan dan label sumber mutasi bank untuk section "Saldo berdasarkan sumber data". */
+const SOURCE_META = [
+  { key: "BANK_PDF", label: "Mutasi PDF" },
+  { key: "BANK_SCREENSHOT", label: "Screenshot" },
+] as const;
+
+/**
+ * Chip tren "vs bulan lalu".
+ *
+ * Persentase HANYA sah kalau pembanding bulan lalu positif dan tandanya tidak berbalik.
+ * Fungsi ini juga dipakai untuk net per kementerian yang bisa negatif; membagi selisih
+ * dengan angka negatif menghasilkan persentase yang menyesatkan (bulan lalu -100 lalu
+ * bulan ini +50 pernah tampil "▲ 150%"). Untuk kasus itu tampilkan selisih nominalnya saja.
+ */
 function renderTrend(current: number, previous: number) {
   if (!current && !previous) return <span className="trend-chip trend-flat">Belum ada data</span>;
-  if (!previous) return <span className="trend-chip trend-up">Baru bulan ini</span>;
   const diff = current - previous;
-  const pct = Math.round(Math.abs(diff / previous) * 100);
   if (diff === 0) return <span className="trend-chip trend-flat">= vs bulan lalu</span>;
   const direction = diff > 0 ? "up" : "down";
   const arrow = direction === "up" ? "▲" : "▼";
-  return <span className={`trend-chip trend-${direction}`}>{arrow} {pct}% vs bulan lalu</span>;
+  const nominal = compactRupiah.format(Math.abs(diff));
+  const detail = `Bulan lalu ${rupiah.format(previous)} → bulan ini ${rupiah.format(current)} (selisih ${rupiah.format(diff)})`;
+  if (!previous) {
+    return <span className={`trend-chip trend-${direction}`} title={detail}>{arrow} {nominal} · baru bulan ini</span>;
+  }
+  if (previous > 0 && current >= 0) {
+    const pct = Math.round(Math.abs(diff / previous) * 100);
+    return <span className={`trend-chip trend-${direction}`} title={detail}>{arrow} {pct}% vs bulan lalu</span>;
+  }
+  return <span className={`trend-chip trend-${direction}`} title={detail}>{arrow} {nominal} vs bulan lalu</span>;
 }
 
 export default async function DashboardPage({ searchParams }: { searchParams: SearchParams }) {
@@ -29,8 +51,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const topExpensePeriod = periodBounds(params.start, params.end);
 
   const now = new Date();
+  // Bulan berjalan dibatasi sampai AKHIR bulan, bukan sampai "sekarang".
+  // Dulu endDate = now sehingga transaksi bertanggal di masa depan (mis. mutasi yang
+  // diimpor lebih awal) hilang dari "bulan berjalan", padahal pembanding bulan lalu
+  // memakai akhir bulan penuh — dua periode itu jadi tidak setara.
   const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-  const endDate = now;
+  const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
   const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
 
@@ -39,24 +65,31 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     bankMonthExpense,
     bankPrevMonthIncome,
     bankPrevMonthExpense,
-    unmatched,
+    unmatchedByDirection,
     recent,
     byMinistry,
     prevMonthByMinistry,
     allTimeByMinistry,
     balanceSummary,
-    sourceBreakdown,
     openingBalanceRows,
     allMinistries,
     topExpenseGroups,
   ] = await Promise.all([
-    db.transaction.aggregate({ where: { isDraft: false, source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] }, direction: "IN", transactionDate: { gte: startDate, lte: endDate } }, _sum: { amount: true } }),
-    db.transaction.aggregate({ where: { isDraft: false, source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] }, direction: "OUT", transactionDate: { gte: startDate, lte: endDate } }, _sum: { amount: true } }),
-    db.transaction.aggregate({ where: { isDraft: false, source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] }, direction: "IN", transactionDate: { gte: prevMonthStart, lte: prevMonthEnd } }, _sum: { amount: true } }),
-    db.transaction.aggregate({ where: { isDraft: false, source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] }, direction: "OUT", transactionDate: { gte: prevMonthStart, lte: prevMonthEnd } }, _sum: { amount: true } }),
-    db.transaction.count({ where: { isDraft: false, status: "UNMATCHED" } }),
+    db.transaction.aggregate({ where: { isDraft: false, source: { in: BANK_SOURCES }, direction: "IN", transactionDate: { gte: startDate, lte: endDate } }, _sum: { amount: true } }),
+    db.transaction.aggregate({ where: { isDraft: false, source: { in: BANK_SOURCES }, direction: "OUT", transactionDate: { gte: startDate, lte: endDate } }, _sum: { amount: true } }),
+    db.transaction.aggregate({ where: { isDraft: false, source: { in: BANK_SOURCES }, direction: "IN", transactionDate: { gte: prevMonthStart, lte: prevMonthEnd } }, _sum: { amount: true } }),
+    db.transaction.aggregate({ where: { isDraft: false, source: { in: BANK_SOURCES }, direction: "OUT", transactionDate: { gte: prevMonthStart, lte: prevMonthEnd } }, _sum: { amount: true } }),
+    // Transaksi belum di-assign: butuh JUMLAH BARIS sekaligus NILAI RUPIAH-nya (masuk & keluar).
+    // Tanpa nilai rupiahnya, selisih antara tabel per-kementerian (hanya MATCHED) dan
+    // saldo rekening (semua status) tidak bisa dijelaskan ke siapa pun.
+    db.transaction.groupBy({
+      by: ["direction"],
+      where: { isDraft: false, status: "UNMATCHED", ...excludeOpeningBalanceWhere() },
+      _sum: { amount: true },
+      _count: true,
+    }),
     db.transaction.findMany({
-      where: { isDraft: false, source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] } },
+      where: { isDraft: false, source: { in: BANK_SOURCES } },
       orderBy: [{ transactionDate: "desc" }, { createdAt: "desc" }],
       take: 6,
       include: { event: true, ministry: true },
@@ -71,7 +104,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         status: "MATCHED",
         transactionDate: { gte: startDate, lte: endDate },
         ministryId: { not: null },
-        NOT: { source: "MANUAL", sourceReference: { startsWith: OPENING_BALANCE_PREFIX } },
+        ...excludeOpeningBalanceWhere(),
       },
       _sum: { amount: true },
     }),
@@ -83,7 +116,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         status: "MATCHED",
         transactionDate: { gte: prevMonthStart, lte: prevMonthEnd },
         ministryId: { not: null },
-        NOT: { source: "MANUAL", sourceReference: { startsWith: OPENING_BALANCE_PREFIX } },
+        ...excludeOpeningBalanceWhere(),
       },
       _sum: { amount: true },
     }),
@@ -94,21 +127,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         isDraft: false,
         status: "MATCHED",
         ministryId: { not: null },
-        NOT: { source: "MANUAL", sourceReference: { startsWith: OPENING_BALANCE_PREFIX } },
+        ...excludeOpeningBalanceWhere(),
       },
       _sum: { amount: true },
     }),
+    // Satu-satunya sumber angka saldo di halaman ini — termasuk rincian per sumber data
+    // (lihat `accountRows[].bySource`). Dulu ada query terpisah dengan filter `status: "MATCHED"`
+    // untuk section per sumber, jadi angkanya tidak pernah bisa cocok dengan saldo rekening.
     getBalanceEstimateSummary(endDate),
-    // Per-source breakdown: sum of (IN - OUT) grouped by source + accountHolder
-    db.transaction.groupBy({
-      by: ["source", "accountHolder", "accountNumber", "direction"],
-      where: {
-        isDraft: false,
-        source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] },
-        status: "MATCHED",
-      },
-      _sum: { amount: true },
-    }),
     // Opening balances for tracked accounts
     db.transaction.findMany({
       where: {
@@ -139,6 +165,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const prevIncomeValue = Number(bankPrevMonthIncome._sum.amount || 0);
   const prevExpenseValue = Number(bankPrevMonthExpense._sum.amount || 0);
   const currentBalance = balanceSummary.confirmedTotal;
+  const unmatchedIncome = Number(unmatchedByDirection.find((row) => row.direction === "IN")?._sum.amount || 0);
+  const unmatchedExpense = Number(unmatchedByDirection.find((row) => row.direction === "OUT")?._sum.amount || 0);
+  const unmatchedCount = unmatchedByDirection.reduce((total, row) => total + row._count, 0);
+  const unmatchedTotal = unmatchedIncome + unmatchedExpense;
   const ministryIds = byMinistry.map((row) => row.ministryId).filter(Boolean) as string[];
   const ministries = allMinistries.filter((ministry) => ministryIds.includes(ministry.id));
   const chart = ministries.map((ministry) => ({
@@ -181,41 +211,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     .map(([ministryId, value]) => {
       const ministry = allMinistries.find((m) => m.id === ministryId);
       const event = topExpenseEvents.find((e) => e.id === value.eventId);
-      return { ministryCode: ministry?.code ?? 0, ministryName: ministry?.name || "—", eventName: event?.name || "—", amount: value.amount };
+      // ministryId dipakai sebagai React key: `code` bisa bentrok (dua kementerian yang
+      // tidak ketemu sama-sama menghasilkan 0), sedangkan id selalu unik.
+      return { ministryId, ministryCode: ministry?.code ?? 0, ministryName: ministry?.name || "—", eventName: event?.name || "—", amount: value.amount };
     })
     .sort((a, b) => b.amount - a.amount);
 
-  // --- Per-source balance breakdown ---
-  const bankSources = ["BANK_PDF", "BANK_SCREENSHOT"] as const;
-  const trackedAccounts = [
-    { label: "Muhammad Rizky", matcher: "muhammad rizky" },
-    { label: "Sugiarsa", matcher: "sugiarsa" },
-  ];
-  const sourceSummary = trackedAccounts.map((tracked) => {
-    const rows = sourceBreakdown.filter((row) => {
-      const holder = (row.accountHolder || "").toLowerCase();
-      return holder.includes(tracked.matcher);
-    });
-    const bySource: Record<string, { income: number; expense: number; net: number }> = {};
-    for (const src of bankSources) {
-      const inRow = rows.find((r) => r.source === src && r.direction === "IN");
-      const outRow = rows.find((r) => r.source === src && r.direction === "OUT");
-      const income = Number(inRow?._sum.amount || 0);
-      const expense = Number(outRow?._sum.amount || 0);
-      bySource[src] = { income, expense, net: income - expense };
-    }
-    return { label: tracked.label, bySource };
-  });
-
   // --- Opening balance warning ---
-  const trackedWithOpeningBalance = trackedAccounts.map((tracked) => {
-    const hasOpening = openingBalanceRows.some((row) => {
-      const holder = (row.accountHolder || "").toLowerCase();
-      return holder.includes(tracked.matcher);
-    });
-    return { label: tracked.label, hasOpening };
-  });
-  const missingOpeningBalance = trackedWithOpeningBalance.filter((a) => !a.hasOpening);
+  // Daftar rekening terpantau + aturan pencocokannya diambil dari @/lib/accounts,
+  // sumber yang sama dengan yang dipakai getBalanceEstimateSummary().
+  const missingOpeningBalance = TRACKED_ACCOUNTS.filter(
+    (tracked) => !openingBalanceRows.some((row) => holderMatches(row.accountHolder, tracked.matcher)),
+  );
+  const unclaimed = balanceSummary.unclaimed;
 
   return (
     <div className="page-stack">
@@ -238,12 +246,27 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           </div>
         </section>
       )}
+      {unclaimed && (
+        <section className="panel dashboard-warning-banner">
+          <div className="dashboard-warning-icon"><TriangleAlert size={20} /></div>
+          <div>
+            <strong>Ada mutasi bank yang belum bisa dikaitkan ke rekening mana pun</strong>
+            <small>
+              {unclaimed.count} transaksi ({unclaimed.label}) senilai {rupiah.format(unclaimed.income)} masuk dan {rupiah.format(unclaimed.expense)} keluar — neto {rupiah.format(unclaimed.net)}.
+              Mutasi ini TIDAK ikut dihitung di kartu saldo rekening di bawah, biasanya karena nama atau nomor pemilik rekening tidak terbaca saat impor.
+            </small>
+          </div>
+          <div className="dashboard-warning-accounts">
+            <Link className="warning-account-chip" href="/transactions?account=unknown">Tinjau mutasinya <ArrowRight size={12} style={{ verticalAlign: "-1px" }} /></Link>
+          </div>
+        </section>
+      )}
 
       <section className="stats-grid">
-        <article className="stat-card stat-income"><div className="stat-icon"><ArrowDownLeft /></div><span>Uang masuk rekening</span><strong>{compactRupiah.format(incomeValue)}</strong><small>Bulan berjalan · mutasi bank</small>{renderTrend(incomeValue, prevIncomeValue)}</article>
-        <article className="stat-card stat-expense"><div className="stat-icon"><ArrowUpRight /></div><span>Uang keluar rekening</span><strong>{compactRupiah.format(expenseValue)}</strong><small>Bulan berjalan · mutasi bank</small>{renderTrend(expenseValue, prevExpenseValue)}</article>
-        <article className="stat-card stat-balance"><div className="stat-icon">=</div><span>Saldo rekening saat ini</span><strong>{compactRupiah.format(currentBalance)}</strong><small>Akumulasi seluruh mutasi bank final</small></article>
-        <article className={`stat-card stat-alert ${unmatched > 0 ? "stat-alert-active" : ""}`}><div className="stat-icon"><CircleAlert /></div><span>Perlu ditinjau</span><strong>{unmatched}</strong><small>Transaksi belum di-assign</small></article>
+        <article className="stat-card stat-income"><div className="stat-icon"><ArrowDownLeft /></div><span>Uang masuk rekening</span><strong>{compactRupiah.format(incomeValue)}</strong><small>Bulan berjalan · semua mutasi bank, tanpa pandang status</small>{renderTrend(incomeValue, prevIncomeValue)}</article>
+        <article className="stat-card stat-expense"><div className="stat-icon"><ArrowUpRight /></div><span>Uang keluar rekening</span><strong>{compactRupiah.format(expenseValue)}</strong><small>Bulan berjalan · semua mutasi bank, tanpa pandang status</small>{renderTrend(expenseValue, prevExpenseValue)}</article>
+        <article className="stat-card stat-balance"><div className="stat-icon">=</div><span>Saldo rekening saat ini</span><strong>{compactRupiah.format(currentBalance)}</strong><small>Saldo awal + seluruh mutasi bank, tanpa pandang status</small></article>
+        <Link className={`stat-card stat-alert ${unmatchedCount > 0 ? "stat-alert-active" : ""}`} href="/transactions?status=UNMATCHED"><div className="stat-icon"><CircleAlert /></div><span>Perlu ditinjau</span><strong>{compactRupiah.format(unmatchedTotal)}</strong><small>{unmatchedCount} transaksi belum di-assign · masuk {compactRupiah.format(unmatchedIncome)} · keluar {compactRupiah.format(unmatchedExpense)}</small></Link>
       </section>
 
       <section className="meeting-metrics-grid dashboard-balance-summary">
@@ -300,27 +323,31 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       <section className="panel source-summary-section">
         <div className="panel-title"><div><span className="eyebrow">RINGKASAN PER SUMBER</span><h2>Saldo berdasarkan sumber data</h2></div></div>
         <div className="source-summary-grid">
-          {sourceSummary.map((account) => (
+          {balanceSummary.accountRows.map((account) => (
             <article className="source-summary-card" key={account.label}>
               <h3>{account.label}</h3>
               <div className="source-summary-rows">
-                {Object.entries(account.bySource).map(([src, data]) => (
-                  <div className="source-summary-row" key={src}>
-                    <div className="source-summary-label">
-                      {src === "BANK_PDF" ? <FileText size={15} /> : <Camera size={15} />}
-                      <span>{src === "BANK_PDF" ? "Mutasi PDF" : "Screenshot"}</span>
+                {SOURCE_META.map((meta) => {
+                  const data = account.bySource[meta.key];
+                  return (
+                    <div className="source-summary-row" key={meta.key}>
+                      <div className="source-summary-label">
+                        {meta.key === "BANK_PDF" ? <FileText size={15} /> : <Camera size={15} />}
+                        <span>{meta.label}</span>
+                      </div>
+                      <div className="source-summary-values">
+                        <div><small>Masuk</small><strong className="money-in">+{rupiah.format(data.income)}</strong></div>
+                        <div><small>Keluar</small><strong className="money-out">-{rupiah.format(data.expense)}</strong></div>
+                        <div><small>Net</small><strong>{rupiah.format(data.net)}</strong></div>
+                      </div>
                     </div>
-                    <div className="source-summary-values">
-                      <div><small>Masuk</small><strong className="money-in">+{rupiah.format(data.income)}</strong></div>
-                      <div><small>Keluar</small><strong className="money-out">-{rupiah.format(data.expense)}</strong></div>
-                      <div><small>Net</small><strong>{rupiah.format(data.net)}</strong></div>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </article>
           ))}
         </div>
+        <p className="table-panel-note">Dihitung dari basis yang sama persis dengan kartu &quot;Saldo rekening&quot; di atas: seluruh mutasi bank tanpa pandang status (termasuk yang belum di-assign dan pencairan QRIS gabungan). Jumlah neto PDF + Screenshot per rekening karena itu selalu cocok dengan saldo terkonfirmasi rekening tersebut, dikurangi saldo awal yang bukan mutasi bank.</p>
       </section>
 
       <section className="panel table-panel">
@@ -353,7 +380,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             </table>
           </div>
         ) : <Empty text="Belum ada kementerian aktif." />}
-        <p className="table-panel-note">Total masuk/keluar dihitung kumulatif sepanjang waktu (bukan hanya bulan berjalan) dari seluruh transaksi final yang sudah di-assign ke kementerian — termasuk rincian pemasukan QRIS per event, sama seperti basis di halaman Laporan. Angka ini beda dari "Saldo rekening saat ini" di atas: pencairan QRIS gabungan ke rekening tidak dihitung lagi di sini supaya tidak dobel. Sebagian kementerian hanya menyalurkan dana tanpa menerima pemasukan langsung — sisa negatif untuk kementerian jenis ini adalah hal yang wajar.</p>
+        <p className="table-panel-note" style={unmatchedCount > 0 ? { paddingBottom: ".55rem" } : undefined}>Total masuk/keluar dihitung kumulatif sepanjang waktu (bukan hanya bulan berjalan) dari seluruh transaksi final yang sudah di-assign ke kementerian — termasuk rincian pemasukan QRIS per event, sama seperti basis di halaman Laporan. Angka ini beda dari &quot;Saldo rekening saat ini&quot; di atas: pencairan QRIS gabungan ke rekening tidak dihitung lagi di sini supaya tidak dobel. Sebagian kementerian hanya menyalurkan dana tanpa menerima pemasukan langsung — sisa negatif untuk kementerian jenis ini adalah hal yang wajar.</p>
+        {unmatchedCount > 0 && (
+          <p className="table-panel-note">
+            <strong>Belum termasuk {unmatchedCount} transaksi yang belum di-assign</strong> senilai {rupiah.format(unmatchedIncome)} masuk dan {rupiah.format(unmatchedExpense)} keluar. Selama transaksi itu belum diberi kementerian, angka di tabel ini akan selalu lebih kecil dari saldo rekening. <Link href="/transactions?status=UNMATCHED" style={{ color: "var(--orange)", fontWeight: 800 }}>Tinjau sekarang</Link>.
+          </p>
+        )}
       </section>
 
       <section className="panel table-panel">
@@ -374,7 +406,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
               </thead>
               <tbody>
                 {topExpenseRows.map((row) => (
-                  <tr key={row.ministryCode}>
+                  <tr key={row.ministryId}>
                     <td data-label="Kode"><span className="ministry-code">{row.ministryCode}</span></td>
                     <td data-label="Kementerian"><strong>{row.ministryName}</strong></td>
                     <td data-label="Kegiatan"><Trophy size={14} style={{ marginRight: "0.35rem", verticalAlign: "-2px" }} />{row.eventName}</td>
@@ -385,6 +417,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             </table>
           </div>
         ) : <Empty text="Belum ada pengeluaran ter-assign pada periode ini." />}
+        <p className="table-panel-note">Hanya menghitung pengeluaran yang sudah di-assign ke kementerian sekaligus ke kegiatan. Pengeluaran yang belum di-assign tidak muncul di sini — lihat kartu &quot;Perlu ditinjau&quot; di atas.</p>
       </section>
 
       <section className="dashboard-grid">

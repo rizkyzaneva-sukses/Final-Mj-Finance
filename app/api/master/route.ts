@@ -10,6 +10,60 @@ function ensureFinance(session: Awaited<ReturnType<typeof getSession>>) {
   return null;
 }
 
+/**
+ * Pencocokan otomatis memakai `wholeAmount.endsWith(uniqueCode)` (lihat `findIncomeMatch`
+ * di `lib/matching.ts`). Karena itu kode pendek sangat berbahaya: kode "0" cocok dengan
+ * SEMUA nominal berakhiran nol, dan kode 1-2 digit gampang cocok dengan nominal donasi bulat.
+ */
+const UNIQUE_CODE_MIN_LENGTH = 3;
+const UNIQUE_CODE_MAX_LENGTH = 8;
+
+function normalizeUniqueCode(value: unknown) {
+  const code = String(value ?? "").trim();
+  if (!code) throw new Error("Kode unik wajib diisi.");
+  if (!/^\d+$/.test(code)) throw new Error("Kode unik hanya boleh berisi angka.");
+  if (/^0+$/.test(code)) {
+    throw new Error("Kode unik tidak boleh bernilai nol. Kode nol akan cocok dengan hampir semua nominal, sehingga semua donasi masuk ke event ini.");
+  }
+  if (code.startsWith("0")) throw new Error("Kode unik tidak boleh diawali angka nol.");
+  if (code.length < UNIQUE_CODE_MIN_LENGTH) {
+    throw new Error(`Kode unik minimal ${UNIQUE_CODE_MIN_LENGTH} digit. Pencocokan memakai digit akhir nominal, jadi kode pendek seperti "0" atau "50" akan cocok dengan banyak nominal donasi dan membuat transaksi salah masuk event.`);
+  }
+  if (code.length > UNIQUE_CODE_MAX_LENGTH) throw new Error(`Kode unik maksimal ${UNIQUE_CODE_MAX_LENGTH} digit.`);
+  return code;
+}
+
+/**
+ * Tolak kode yang ambigu terhadap kode aktif lain: bila kode baru merupakan akhiran dari
+ * kode lain (atau sebaliknya), satu nominal bisa cocok ke dua event sekaligus.
+ * `findIncomeMatch` memang memilih kode terpanjang, tetapi kondisi ini menyesatkan user
+ * sehingga lebih baik ditolak sejak input.
+ */
+async function assertUniqueCodeNotAmbiguous(uniqueCode: string, excludeId?: string) {
+  const others = await db.incomeType.findMany({
+    where: {
+      active: true,
+      uniqueCode: { not: null },
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+    select: { uniqueCode: true, name: true, event: { select: { name: true } } },
+  });
+
+  const conflict = others.find((row) => {
+    const other = row.uniqueCode!;
+    return uniqueCode.endsWith(other) || other.endsWith(uniqueCode);
+  });
+  if (!conflict) return;
+
+  const label = conflict.event?.name ? `${conflict.event.name} · ${conflict.name}` : conflict.name;
+  if (conflict.uniqueCode === uniqueCode) {
+    throw new Error(`Kode unik ${uniqueCode} sudah dipakai mapping ${label}.`);
+  }
+  throw new Error(
+    `Kode unik ${uniqueCode} bentrok dengan kode ${conflict.uniqueCode} (${label}). Salah satu kode adalah akhiran dari yang lain, jadi satu nominal bisa cocok ke dua event sekaligus. Pakai kode lain.`,
+  );
+}
+
 export async function POST(request: Request) {
   const session = await getSession();
   const guard = ensureFinance(session);
@@ -33,9 +87,9 @@ export async function POST(request: Request) {
     if (body.entity === "income") {
       const eventId = String(body.eventId || "");
       const incomeMasterId = String(body.incomeMasterId || "");
-      const uniqueCode = String(body.uniqueCode || "").trim();
-      if (!eventId || !incomeMasterId || !/^(0|[1-9]\d*)$/.test(uniqueCode)) throw new Error("Event, master pemasukan, dan kode unik tanpa nol depan wajib diisi.");
-      if (uniqueCode.length > 8) throw new Error("Kode unik maksimal 8 digit.");
+      if (!eventId || !incomeMasterId) throw new Error("Event dan master pemasukan wajib diisi.");
+      const uniqueCode = normalizeUniqueCode(body.uniqueCode);
+      await assertUniqueCodeNotAmbiguous(uniqueCode);
       const incomeMaster = await db.incomeMaster.findUnique({ where: { id: incomeMasterId } });
       if (!incomeMaster || !incomeMaster.active) throw new Error("Master pemasukan tidak valid.");
       const row = await db.incomeType.create({ data: { name: incomeMaster.name, eventId, uniqueCode, incomeMasterId: incomeMaster.id } });
@@ -97,9 +151,10 @@ export async function PATCH(request: Request) {
       const id = String(body.id || "");
       const eventId = String(body.eventId || "");
       const incomeMasterId = String(body.incomeMasterId || "");
-      const uniqueCode = String(body.uniqueCode || "").trim();
-      if (!id || !eventId || !incomeMasterId || !/^(0|[1-9]\d*)$/.test(uniqueCode)) throw new Error("Event, master pemasukan, dan kode unik tanpa nol depan wajib diisi.");
-      if (uniqueCode.length > 8) throw new Error("Kode unik maksimal 8 digit.");
+      if (!id || !eventId || !incomeMasterId) throw new Error("Event dan master pemasukan wajib diisi.");
+      const uniqueCode = normalizeUniqueCode(body.uniqueCode);
+      // Baris yang sedang diedit dikecualikan supaya kodenya sendiri tidak dianggap bentrok.
+      if (body.active !== false) await assertUniqueCodeNotAmbiguous(uniqueCode, id);
       const incomeMaster = await db.incomeMaster.findUnique({ where: { id: incomeMasterId } });
       if (!incomeMaster || !incomeMaster.active) throw new Error("Master pemasukan tidak valid.");
       const row = await db.incomeType.update({

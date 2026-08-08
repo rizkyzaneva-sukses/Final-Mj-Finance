@@ -8,25 +8,65 @@ import type { Prisma, TransactionSource } from "@prisma/client";
 export const dynamic = "force-dynamic";
 const pageSize = 50;
 
+/**
+ * Nilai searchParams bisa berupa array bila parameter yang sama dikirim berulang
+ * (`?tab=a&tab=b`). Tipenya dibuat jujur agar setiap parameter wajib melewati
+ * `firstValue()` sebelum dipakai.
+ */
+type ParamValue = string | string[] | undefined;
+
 type Params = Promise<{
-  status?: string;
-  source?: string;
-  tab?: string;
-  q?: string;
-  page?: string;
-  ministryId?: string;
-  eventId?: string;
-  incomeTypeId?: string;
-  expenseTypeId?: string;
-  account?: string;
-  direction?: string;
+  status?: ParamValue;
+  source?: ParamValue;
+  tab?: ParamValue;
+  q?: ParamValue;
+  page?: ParamValue;
+  ministryId?: ParamValue;
+  eventId?: ParamValue;
+  incomeTypeId?: ParamValue;
+  expenseTypeId?: ParamValue;
+  account?: ParamValue;
+  direction?: ParamValue;
 }>;
+
+/**
+ * Sanitasi parameter URL (BUG #21).
+ *
+ * Nilai dari `searchParams` datang mentah dari user dan bisa berupa array
+ * (mis. `?source=a&source=b`). Dulu `params.source` langsung dilempar ke Prisma
+ * dengan `as never`, sehingga `?source=xxx` membuat Prisma melempar error dan
+ * halaman ini balas 500. Semua parameter sekarang dinormalkan lebih dulu dan
+ * nilai yang tidak dikenal cukup diabaikan.
+ */
+const TRANSACTION_SOURCES = ["QRIS_XLSX", "BANK_PDF", "BANK_SCREENSHOT", "MANUAL"] as const;
+const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+const MAX_PAGE = 100_000;
+
+function firstValue(value: unknown) {
+  if (Array.isArray(value)) return typeof value[0] === "string" ? value[0] : "";
+  return typeof value === "string" ? value : "";
+}
+
+/** Id master data selalu cuid — tolak apa pun yang berbentuk lain. */
+function safeId(value: unknown) {
+  const text = firstValue(value).trim();
+  return ID_PATTERN.test(text) ? text : "";
+}
+
+/** `decodeURIComponent` melempar URIError pada input rusak seperti `%`. */
+function safeDecode(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
 
 function decodeAccountKey(value: string) {
   const [holder = "", number = ""] = value.split("::");
   return {
-    holder: decodeURIComponent(holder),
-    number: decodeURIComponent(number),
+    holder: safeDecode(holder),
+    number: safeDecode(number),
   };
 }
 
@@ -34,19 +74,31 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
   const session = await getSession();
   const params = await searchParams;
   const statuses = ["UNMATCHED", "MATCHED", "SKIPPED"] as const;
-  const status = statuses.includes(params.status as (typeof statuses)[number]) ? params.status as (typeof statuses)[number] : "UNMATCHED";
-  const direction = params.direction === "IN" || params.direction === "OUT" ? params.direction : "";
-  const currentPage = Math.max(1, Number.parseInt(params.page || "1", 10) || 1);
-  const query = String(params.q || "").trim();
+  const rawStatus = firstValue(params.status);
+  const status = statuses.includes(rawStatus as (typeof statuses)[number]) ? rawStatus as (typeof statuses)[number] : "UNMATCHED";
+  const rawDirection = firstValue(params.direction);
+  const direction = rawDirection === "IN" || rawDirection === "OUT" ? rawDirection : "";
+  const rawSource = firstValue(params.source);
+  const source = TRANSACTION_SOURCES.includes(rawSource as TransactionSource) ? (rawSource as TransactionSource) : "";
+  const rawTab = firstValue(params.tab);
+  const tab = rawTab === "mutasi" || rawTab === "qris" ? rawTab : "";
+  const ministryId = safeId(params.ministryId);
+  const eventId = safeId(params.eventId);
+  const incomeTypeId = safeId(params.incomeTypeId);
+  const expenseTypeId = safeId(params.expenseTypeId);
+  const account = firstValue(params.account).trim();
+  const parsedPage = Number.parseInt(firstValue(params.page) || "1", 10);
+  const currentPage = Number.isFinite(parsedPage) ? Math.min(MAX_PAGE, Math.max(1, parsedPage)) : 1;
+  const query = firstValue(params.q).trim();
   const baseWhere: Prisma.TransactionWhereInput = {
     isDraft: false,
-    ...(params.tab === "mutasi" ? { source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] } } : {}),
-    ...(params.tab === "qris" ? { source: "QRIS_XLSX" } : {}),
-    ...(params.source ? { source: params.source as never } : {}),
-    ...(params.ministryId ? { ministryId: params.ministryId } : {}),
-    ...(params.eventId ? { eventId: params.eventId } : {}),
-    ...(params.incomeTypeId ? { incomeTypeId: params.incomeTypeId } : {}),
-    ...(params.expenseTypeId ? { expenseTypeId: params.expenseTypeId } : {}),
+    ...(tab === "mutasi" ? { source: { in: ["BANK_PDF", "BANK_SCREENSHOT"] } } : {}),
+    ...(tab === "qris" ? { source: "QRIS_XLSX" } : {}),
+    ...(source ? { source } : {}),
+    ...(ministryId ? { ministryId } : {}),
+    ...(eventId ? { eventId } : {}),
+    ...(incomeTypeId ? { incomeTypeId } : {}),
+    ...(expenseTypeId ? { expenseTypeId } : {}),
     ...(direction ? { direction } : {}),
   };
 
@@ -62,7 +114,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
     ];
   }
 
-  if (params.account === "unknown") {
+  if (account === "unknown") {
     baseWhere.AND = [
       ...(baseWhere.AND ? (Array.isArray(baseWhere.AND) ? baseWhere.AND : [baseWhere.AND]) : []),
       {
@@ -74,13 +126,13 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
         ],
       },
     ];
-  } else if (params.account) {
-    const account = decodeAccountKey(params.account);
+  } else if (account) {
+    const decoded = decodeAccountKey(account);
     baseWhere.AND = [
       ...(baseWhere.AND ? (Array.isArray(baseWhere.AND) ? baseWhere.AND : [baseWhere.AND]) : []),
       {
-        accountHolder: account.holder || null,
-        accountNumber: account.number || null,
+        accountHolder: decoded.holder || null,
+        accountNumber: decoded.number || null,
       },
     ];
   }
@@ -210,16 +262,16 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
         master={master}
         canDelete={session?.role === "FINANCE"}
         activeStatus={status}
-        activeTab={params.tab || ""}
+        activeTab={tab}
         counts={countMap}
         filters={{
           query,
-          source: params.source || "",
-          ministryId: params.ministryId || "",
-          eventId: params.eventId || "",
-          incomeTypeId: params.incomeTypeId || "",
-          expenseTypeId: params.expenseTypeId || "",
-          account: params.account || "",
+          source,
+          ministryId,
+          eventId,
+          incomeTypeId,
+          expenseTypeId,
+          account,
           direction,
           ministries: ministries.map((ministry) => ({ value: ministry.id, label: `${ministry.code} · ${ministry.name}` })),
           events: eventOptions,
