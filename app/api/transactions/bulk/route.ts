@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { recalculateBatchStats } from "@/lib/matching";
 
 type BulkBody = {
   ids?: string[];
@@ -19,8 +20,10 @@ export async function POST(request: Request) {
   const ids = Array.isArray(body.ids) ? body.ids.filter((value: unknown): value is string => typeof value === "string" && value.length > 0) : [];
   if (!ids.length) return NextResponse.json({ error: "Belum ada transaksi yang dipilih." }, { status: 400 });
 
-  const transactions = await db.transaction.findMany({ where: { id: { in: ids } } });
+  const transactions = await db.transaction.findMany({ where: { id: { in: ids } }, select: { id: true, importBatchId: true, direction: true } });
   if (transactions.length !== ids.length) return NextResponse.json({ error: "Sebagian transaksi tidak ditemukan." }, { status: 404 });
+
+  const batchIds = [...new Set(transactions.map((t) => t.importBatchId).filter(Boolean))] as string[];
 
   if (body.action === "skip") {
     await db.transaction.updateMany({
@@ -36,6 +39,7 @@ export async function POST(request: Request) {
         assignedByRole: session.role,
       },
     });
+    await Promise.all(batchIds.map(recalculateBatchStats));
     return NextResponse.json({ ok: true });
   }
 
@@ -47,6 +51,7 @@ export async function POST(request: Request) {
         skipReason: null,
       },
     });
+    await Promise.all(batchIds.map(recalculateBatchStats));
     return NextResponse.json({ ok: true });
   }
 
@@ -73,6 +78,7 @@ export async function POST(request: Request) {
         assignedByRole: session.role,
       },
     });
+    await Promise.all(batchIds.map(recalculateBatchStats));
     return NextResponse.json({ ok: true });
   }
 
@@ -97,5 +103,6 @@ export async function POST(request: Request) {
       assignedByRole: session.role,
     },
   });
+  await Promise.all(batchIds.map(recalculateBatchStats));
   return NextResponse.json({ ok: true });
 }

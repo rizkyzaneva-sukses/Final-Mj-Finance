@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { recalculateBatchStats } from "@/lib/matching";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -12,10 +13,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   if (body.action === "skip") {
     await db.transaction.update({ where: { id }, data: { status: "SKIPPED", skipReason: "Dilewati manual", ministryId: null, eventId: null, incomeTypeId: null, expenseTypeId: null, assignedAt: null, assignedByRole: session.role } });
+    if (transaction.importBatchId) await recalculateBatchStats(transaction.importBatchId);
     return NextResponse.json({ ok: true });
   }
   if (body.action === "reopen") {
     await db.transaction.update({ where: { id }, data: { status: "UNMATCHED", skipReason: null } });
+    if (transaction.importBatchId) await recalculateBatchStats(transaction.importBatchId);
     return NextResponse.json({ ok: true });
   }
   if (body.action !== "assign") return NextResponse.json({ error: "Aksi tidak valid." }, { status: 400 });
@@ -31,6 +34,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (!expenseType || !expenseType.active) return NextResponse.json({ error: "Jenis pengeluaran tidak valid." }, { status: 400 });
     await db.transaction.update({ where: { id }, data: { status: "MATCHED", ministryId: event.ministryId, eventId: event.id, incomeTypeId: null, expenseTypeId: expenseType.id, skipReason: null, assignedAt: new Date(), assignedByRole: session.role } });
   }
+  if (transaction.importBatchId) await recalculateBatchStats(transaction.importBatchId);
   return NextResponse.json({ ok: true });
 }
 

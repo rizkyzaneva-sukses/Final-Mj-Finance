@@ -211,3 +211,16 @@ export async function finalizeImportBatch(batchId: string) {
     data: { isDraft: false },
   });
 }
+
+/** Recalculate matched/unmatched/skipped counts for a batch from actual transaction data. */
+export async function recalculateBatchStats(batchId: string) {
+  const [matched, unmatched, skipped] = await Promise.all([
+    db.transaction.count({ where: { importBatchId: batchId, status: "MATCHED" } }),
+    db.transaction.count({ where: { importBatchId: batchId, status: "UNMATCHED" } }),
+    db.transaction.count({ where: { importBatchId: batchId, status: "SKIPPED" } }),
+  ]);
+  await db.importBatch.update({
+    where: { id: batchId },
+    data: { matchedRows: matched, unmatchedRows: unmatched, skippedRows: skipped },
+  });
+}
