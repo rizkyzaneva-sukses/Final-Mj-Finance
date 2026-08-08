@@ -308,24 +308,22 @@ async function persistTransactions(batchId: string, rows: NormalizedTransaction[
 
   const payloads: Prisma.TransactionCreateManyInput[] = [];
   for (const { row, hash } of fresh) {
-    const fuzzyDupe = matchDuplicate(row, duplicateIndex);
     const isBatchQris = row.description.toUpperCase().includes(BATCH_QRIS_MARKER);
+    const fuzzyDupe = isBatchQris ? null : matchDuplicate(row, duplicateIndex);
 
-    // Determine status and skipReason
     let status: TransactionStatus;
     let skipReason: string | null = null;
 
-    if (fuzzyDupe) {
-      status = "SKIPPED";
-      skipReason = duplicateSkipReason(fuzzyDupe);
-    } else if (isBatchQris) {
+    if (isBatchQris) {
       status = "SKIPPED";
       skipReason = "Gabungan pencairan QRIS, detail dihitung dari file QRIS.";
+    } else if (fuzzyDupe) {
+      status = "SKIPPED";
+      skipReason = duplicateSkipReason(fuzzyDupe);
     } else {
       status = "UNMATCHED";
     }
 
-    // Income matching only applies to non-skipped IN transactions
     const match =
       row.direction === "IN" && !isBatchQris && !fuzzyDupe
         ? findIncomeMatch(row.amount, incomeTypes)
@@ -398,8 +396,9 @@ export async function finalizeImportBatch(batchId: string) {
   });
 
   let duplicateSkipped = 0;
-  if (pending.length) {
-    const candidates = pending.map((item) => ({ id: item.id, row: { ...item, amount: toNumber(item.amount) } }));
+  const nonBatchQris = pending.filter((item) => !item.description.toUpperCase().includes(BATCH_QRIS_MARKER));
+  if (nonBatchQris.length) {
+    const candidates = nonBatchQris.map((item) => ({ id: item.id, row: { ...item, amount: toNumber(item.amount) } }));
     const duplicateIndex = buildDuplicateIndex(
       await loadDuplicateCandidates(candidates.map((item) => item.row), { excludeBatchId: batchId }),
     );
