@@ -70,13 +70,29 @@ export default async function ImportBatchPage({ params }: { params: Params }) {
     : [];
   const originalById = new Map(originalRows.map((row) => [row.id, row]));
 
-  // Estimasi saldo setelah terapkan: bank (kecuali exact-dup yang masih SKIPPED — dibuang di finalize)
-  // + QRIS non-SKIPPED.
+  // Estimasi saldo SETELAH apply — fokus ke rekening batch ini, bukan total semua rekening.
   const now = new Date();
   const balanceSummary = await getBalanceEstimateSummary(now);
+  const batchHolder = batch.accountHolder;
+  const batchNumber = batch.accountNumber ? String(batch.accountNumber).replace(/\D/g, "") : "";
+  const matchedAccount =
+    balanceSummary.accountRows.find((row) => {
+      if (batchNumber && row.accountNumber && String(row.accountNumber).replace(/\D/g, "") === batchNumber) {
+        return true;
+      }
+      if (batchHolder && row.label) {
+        const a = batchHolder.toLocaleLowerCase("id-ID");
+        const b = row.label.toLocaleLowerCase("id-ID");
+        return a.includes(b) || b.includes(a);
+      }
+      return false;
+    }) ?? null;
+
   let bankDelta = 0;
   let qrisDeltaGross = 0;
   let qrisDeltaFee = 0;
+  let incomeDelta = 0;
+  let expenseDelta = 0;
   for (const row of batch.transactions) {
     const amount = Number(row.amount);
     const signed = row.direction === "IN" ? amount : -amount;
@@ -84,22 +100,40 @@ export default async function ImportBatchPage({ params }: { params: Params }) {
     if (isExactDuplicateSkipReason(row.skipReason) && row.status === "SKIPPED") continue;
     if (BANK_SOURCES.includes(row.source)) {
       bankDelta += signed;
+      if (row.direction === "IN") incomeDelta += amount;
+      else expenseDelta += amount;
     } else if (row.source === "QRIS_XLSX" && row.status !== "SKIPPED" && row.direction === "IN") {
       qrisDeltaGross += amount;
       qrisDeltaFee += qrisFeeFor(amount);
     }
   }
   bankDelta = roundMoney(bankDelta);
+  incomeDelta = roundMoney(incomeDelta);
+  expenseDelta = roundMoney(expenseDelta);
   qrisDeltaGross = roundMoney(qrisDeltaGross);
   qrisDeltaFee = roundMoney(qrisDeltaFee);
   const qrisDeltaNet = roundMoney(qrisDeltaGross - qrisDeltaFee);
+
+  const currentConfirmed = matchedAccount?.confirmedBalance ?? 0;
+  const currentEstimated = matchedAccount?.estimatedBalance ?? currentConfirmed;
+  const currentOpening = matchedAccount?.openingBalance ?? 0;
+  const accountLabel =
+    matchedAccount?.label ||
+    batch.accountHolder ||
+    (batchNumber ? `Rek. ${batchNumber}` : "Rekening batch ini");
+
   const balanceImpact = {
-    currentConfirmed: balanceSummary.confirmedTotal,
-    currentEstimated: balanceSummary.estimatedTotal,
+    accountLabel,
+    accountNumber: matchedAccount?.accountNumber || batch.accountNumber,
+    openingBalance: currentOpening,
+    currentConfirmed,
+    currentEstimated,
     bankDelta,
+    incomeDelta,
+    expenseDelta,
     qrisDeltaNet,
-    afterConfirmed: roundMoney(balanceSummary.confirmedTotal + bankDelta),
-    afterEstimated: roundMoney(balanceSummary.estimatedTotal + bankDelta + qrisDeltaNet),
+    afterConfirmed: roundMoney(currentConfirmed + bankDelta),
+    afterEstimated: roundMoney(currentEstimated + bankDelta + qrisDeltaNet),
     isBankBatch: BANK_SOURCES.includes(batch.source),
     isQrisBatch: batch.source === "QRIS_XLSX",
   };

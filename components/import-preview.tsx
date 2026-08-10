@@ -57,9 +57,14 @@ type Batch = {
 };
 
 type BalanceImpact = {
+  accountLabel: string;
+  accountNumber: string | null;
+  openingBalance: number;
   currentConfirmed: number;
   currentEstimated: number;
   bankDelta: number;
+  incomeDelta: number;
+  expenseDelta: number;
   qrisDeltaNet: number;
   afterConfirmed: number;
   afterEstimated: number;
@@ -242,16 +247,28 @@ export function ImportPreview({
 
     <section className="panel import-balance-impact">
       <div className="import-balance-impact-head">
-        <span className="eyebrow">ESTIMASI SALDO</span>
-        <strong>Setelah data ini diterapkan</strong>
+        <span className="eyebrow">ESTIMASI SALDO REKENING INI</span>
+        <strong>{balanceImpact.accountLabel}</strong>
+        <small>
+          {balanceImpact.accountNumber ? `Rek. ${balanceImpact.accountNumber}` : "Nomor rekening belum terbaca"}
+          {" · "}hanya rekening batch ini, bukan total semua rekening
+        </small>
       </div>
       <div className="import-balance-impact-grid">
         <div>
-          <small>Saldo terkonfirmasi sekarang</small>
+          <small>Saldo sekarang</small>
           <strong>{rupiah.format(balanceImpact.currentConfirmed)}</strong>
         </div>
         <div>
-          <small>Perubahan mutasi bank</small>
+          <small>Masuk dari file</small>
+          <strong className="money-in">+{rupiah.format(balanceImpact.incomeDelta)}</strong>
+        </div>
+        <div>
+          <small>Keluar dari file</small>
+          <strong className="money-out">-{rupiah.format(balanceImpact.expenseDelta)}</strong>
+        </div>
+        <div>
+          <small>Neto file</small>
           <strong className={balanceImpact.bankDelta >= 0 ? "money-in" : "money-out"}>{formatSigned(balanceImpact.bankDelta)}</strong>
         </div>
         {balanceImpact.isQrisBatch && (
@@ -261,21 +278,19 @@ export function ImportPreview({
           </div>
         )}
         <div>
-          <small>Saldo terkonfirmasi setelah apply</small>
+          <small>Saldo setelah apply</small>
           <strong>{rupiah.format(balanceImpact.afterConfirmed)}</strong>
-        </div>
-        <div>
-          <small>Saldo estimasi setelah apply</small>
-          <strong>{rupiah.format(balanceImpact.afterEstimated)}</strong>
         </div>
       </div>
       <p className="import-balance-impact-note">
         {balanceImpact.isBankBatch
-          ? "Mutasi bank (termasuk skip biasa) menggerakkan saldo. Duplikat exact yang masih di-skip tidak dihitung (dibuang saat apply)."
+          ? "Fokus rekening yang di-upload. Skip biasa tetap menggerakkan saldo; duplikat exact yang masih di-skip dibuang saat apply."
           : balanceImpact.isQrisBatch
-            ? "QRIS yang statusnya Dilewati tidak menambah estimasi. Saldo terkonfirmasi bank baru berubah saat pencairan QRIS masuk mutasi bank."
-            : "Angka dihitung dari draft batch ini terhadap saldo buku saat ini."}
-        {" "}Ringkas: {compactRupiah.format(balanceImpact.currentConfirmed)} → {compactRupiah.format(balanceImpact.afterConfirmed)}.
+            ? "QRIS dilewati tidak menambah estimasi. Saldo bank rekening ini baru berubah saat pencairan masuk mutasi bank."
+            : "Angka dihitung hanya untuk rekening batch ini."}
+        {" "}
+        {compactRupiah.format(balanceImpact.currentConfirmed)} → {compactRupiah.format(balanceImpact.afterConfirmed)}
+        {balanceImpact.openingBalance !== 0 ? ` · saldo awal ${rupiah.format(balanceImpact.openingBalance)}` : ""}.
       </p>
     </section>
 

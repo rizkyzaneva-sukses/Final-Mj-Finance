@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, LoaderCircle, X, Scale, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { rupiah } from "@/lib/format";
 import { parseIdrInput } from "@/lib/money";
@@ -53,7 +54,10 @@ export function ReconciliationModal({
   const [skippedLabels, setSkippedLabels] = useState<string[]>([]);
   const [unclaimed, setUnclaimed] = useState<ReconciliationUnclaimed | null>(null);
 
+  const [mounted, setMounted] = useState(false);
+
   useEffect(() => {
+    setMounted(true);
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
@@ -131,7 +135,9 @@ export function ReconciliationModal({
     setExpandedAccount(expandedAccount === accountNumber ? null : accountNumber);
   }
 
-  return (
+  if (!mounted || typeof document === "undefined") return null;
+
+  return createPortal(
     <div className="modal-backdrop modal-backdrop-reconcile" onMouseDown={onClose}>
       <div className="modal-card modal-card-reconcile" onMouseDown={(event) => event.stopPropagation()}>
         <button className="modal-close" onClick={onClose} type="button">
@@ -342,6 +348,7 @@ export function ReconciliationModal({
           )}
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
