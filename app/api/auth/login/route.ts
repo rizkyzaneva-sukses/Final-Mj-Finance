@@ -17,7 +17,9 @@ export async function POST(request: NextRequest) {
     ? "FINANCE"
     : safeCodeEqual(code, process.env.MINISTRY_LOGIN_CODE)
       ? "MINISTRY"
-      : null;
+      : safeCodeEqual(code, process.env.MENSOS_LOGIN_CODE)
+        ? "MENSOS"
+        : null;
 
   if (!role) {
     const current = state && state.resetAt > now ? state : { count: 0, resetAt: now + 15 * 60_000 };

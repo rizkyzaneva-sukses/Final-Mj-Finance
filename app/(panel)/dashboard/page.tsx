@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, CircleAlert, Sparkles, TriangleAlert, FileText, Camera, Trophy } from "lucide-react";
 import { PageHeading } from "@/components/page-heading";
 import { QrisResetButton } from "@/components/qris-reset-button";
 import { ReconciliationTrigger } from "@/components/reconciliation-trigger";
 import { DashboardFilters } from "@/components/dashboard-filters";
 import { BANK_SOURCES, TRACKED_ACCOUNTS, excludeOpeningBalanceWhere, holderMatches } from "@/lib/accounts";
+import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { compactRupiah, dateId, periodBounds, rupiah } from "@/lib/format";
 import { getBalanceEstimateSummary } from "@/lib/meeting-report";
@@ -47,6 +49,8 @@ function renderTrend(current: number, previous: number) {
 }
 
 export default async function DashboardPage({ searchParams }: { searchParams: SearchParams }) {
+  const session = await getSession();
+  if (session?.role === "MENSOS") redirect("/mensos");
   const params = await searchParams;
   const topExpensePeriod = periodBounds(params.start, params.end);
 

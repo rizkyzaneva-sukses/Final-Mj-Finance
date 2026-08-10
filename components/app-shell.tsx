@@ -15,6 +15,16 @@ const links = [
   { href: "/master", label: "Master Data", icon: Building2, financeOnly: true },
 ];
 
+const mensosLinks = [
+  { href: "/mensos", label: "Ringkasan", icon: BarChart3 },
+];
+
+const roleLabels: Record<AppRole, string> = {
+  FINANCE: "Menteri Keuangan",
+  MINISTRY: "Kementerian",
+  MENSOS: "Kemensos 26 Sejahtera",
+};
+
 export function AppShell({ role, children }: { role: AppRole; children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -41,6 +51,10 @@ export function AppShell({ role, children }: { role: AppRole; children: React.Re
     router.refresh();
   }
 
+  const navLinks = role === "MENSOS"
+    ? mensosLinks
+    : links.filter((item) => !item.financeOnly || role === "FINANCE");
+
   return (
     <div className="app-frame">
       <button className="mobile-menu" onClick={() => setOpen(true)} aria-label="Buka menu"><Menu /></button>
@@ -51,9 +65,9 @@ export function AppShell({ role, children }: { role: AppRole; children: React.Re
           <span className="brand-seal">MJ</span>
           <div><strong>MUDA JUARA</strong><small>FINANCE</small></div>
         </div>
-        <div className="role-chip">{role === "FINANCE" ? "Menteri Keuangan" : "Kementerian"}</div>
+        <div className="role-chip">{roleLabels[role]}</div>
         <nav>
-          {links.filter((item) => !item.financeOnly || role === "FINANCE").map((item) => {
+          {navLinks.map((item) => {
             const Icon = item.icon;
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return <Link key={item.href} href={item.href} className={active ? "active" : ""} onClick={() => setOpen(false)}><Icon size={19} />{item.label}</Link>;

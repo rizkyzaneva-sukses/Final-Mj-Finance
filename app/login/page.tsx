@@ -4,7 +4,8 @@ import { getSession } from "@/lib/auth";
 import { LoginForm } from "@/components/login-form";
 
 export default async function LoginPage() {
-  if (await getSession()) redirect("/dashboard");
+  const session = await getSession();
+  if (session) redirect(session.role === "MENSOS" ? "/mensos" : "/dashboard");
   return (
     <main className="login-page">
       <section className="login-story">

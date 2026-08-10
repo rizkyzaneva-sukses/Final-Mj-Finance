@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { jwtVerify, SignJWT } from "jose";
 
-export type AppRole = "FINANCE" | "MINISTRY";
+export type AppRole = "FINANCE" | "MINISTRY" | "MENSOS";
 export type AppSession = { role: AppRole; expiresAt: number };
 
 const COOKIE_NAME = "mjf_session";
@@ -48,7 +48,7 @@ export async function getSession(): Promise<AppSession | null> {
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, secret());
-    if (payload.role !== "FINANCE" && payload.role !== "MINISTRY") return null;
+    if (payload.role !== "FINANCE" && payload.role !== "MINISTRY" && payload.role !== "MENSOS") return null;
     return { role: payload.role, expiresAt: Number(payload.expiresAt) };
   } catch {
     return null;
