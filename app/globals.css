@@ -471,6 +471,21 @@ h1, h2 { font-family: Georgia, "Times New Roman", serif; letter-spacing: -.035em
 .report-event-filter label { font-size: .65rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
 .report-event-filter select { padding: .6rem .7rem; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 9px; }
 
+/* ===== MENSOS transaction detail ===== */
+.mensos-tx-section { margin-top: 1rem; }
+.mensos-tx-filters { display: flex; align-items: center; gap: .75rem; padding: .65rem .9rem; margin-bottom: .75rem; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; }
+.mensos-tx-filters > svg { color: var(--orange); flex: none; }
+.mensos-tx-filters label { display: flex; align-items: center; gap: .4rem; color: var(--muted); font-size: .68rem; font-weight: 800; text-transform: uppercase; }
+.mensos-tx-filters select { padding: .4rem .55rem; color: var(--ink); background: white; border: 1px solid var(--line); border-radius: 8px; font-size: .78rem; }
+.mensos-tx-filters select:focus { border-color: var(--forest-2); outline: none; box-shadow: 0 0 0 3px rgba(31,91,78,.1); }
+.mensos-tx-count { margin-left: auto; color: var(--muted); font-size: .72rem; font-weight: 700; }
+.mensos-tx-pagination { display: flex; justify-content: center; align-items: center; gap: 1rem; margin-top: .85rem; }
+.mensos-tx-pagination span { color: var(--muted); font-size: .78rem; font-weight: 700; }
+.mensos-tx-pagination .button { padding: .5rem .9rem; font-size: .78rem; }
+.mensos-tx-pagination .button:disabled { opacity: .4; cursor: not-allowed; }
+:root[data-theme="dark"] .mensos-tx-filters { background: rgba(19,32,28,.92); border-color: rgba(134,190,167,.14); }
+:root[data-theme="dark"] .mensos-tx-filters select { background: rgba(8,16,14,.86); border-color: rgba(134,190,167,.16); color: var(--ink); }
+
 /* ===== Landing page ===== */
 .site-header { position: sticky; top: 0; z-index: 50; backdrop-filter: blur(12px); background: color-mix(in srgb, var(--paper) 78%, transparent); border-bottom: 1px solid transparent; transition: border-color .2s ease, background-color .2s ease; }
 .site-header-scrolled { border-color: var(--line); background: color-mix(in srgb, var(--paper) 92%, transparent); }

@@ -2,9 +2,10 @@ import { redirect } from "next/navigation";
 import { ArrowDownLeft, ArrowUpRight, BarChart3, Wallet } from "lucide-react";
 import { PageHeading } from "@/components/page-heading";
 import { MensosFilters } from "@/components/mensos-filters";
+import { MensosTransactionTable } from "@/components/mensos-transaction-table";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { compactRupiah, dateId, periodBounds, rupiah } from "@/lib/format";
+import { compactRupiah, periodBounds, rupiah } from "@/lib/format";
 import { excludeOpeningBalanceWhere } from "@/lib/accounts";
 import { qrisFeeFor, roundMoney } from "@/lib/money";
 
@@ -130,7 +131,7 @@ export default async function MensosDashboard({ searchParams }: { searchParams: 
       transactionCount: eventTx.length,
       transactions: detailTx.map((t) => ({
         id: t.id,
-        date: t.transactionDate,
+        date: t.transactionDate.toISOString(),
         description: t.description,
         direction: t.direction as "IN" | "OUT",
         amount: Number(t.amount),
@@ -322,32 +323,7 @@ export default async function MensosDashboard({ searchParams }: { searchParams: 
               </table>
             </div>
           )}
-          {event.transactions.length > 0 && (
-            <div className="responsive-table">
-              <table className="report-table responsive-report-table">
-                <thead>
-                  <tr>
-                    <th>Tanggal</th>
-                    <th>Keterangan</th>
-                    <th>Jenis</th>
-                    <th>Arah</th>
-                    <th>Jumlah</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {event.transactions.map((t) => (
-                    <tr key={t.id}>
-                      <td data-label="Tanggal">{dateId.format(t.date)}</td>
-                      <td data-label="Keterangan">{t.description}</td>
-                      <td data-label="Jenis">{t.direction === "IN" ? (t.incomeTypeName || "—") : (t.expenseTypeName || "—")}</td>
-                      <td data-label="Arah"><span className={t.direction === "IN" ? "money-in" : "money-out"}>{t.direction === "IN" ? "Masuk" : "Keluar"}</span></td>
-                      <td data-label="Jumlah" className={t.direction === "IN" ? "money-in" : "money-out"}>{t.direction === "IN" ? "+" : "-"}{rupiah.format(t.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <MensosTransactionTable transactions={event.transactions} />
         </section>
       ))}
 
@@ -362,28 +338,18 @@ export default async function MensosDashboard({ searchParams }: { searchParams: 
               Net: {rupiah.format(roundMoney(nonEventIncome - nonEventQrisFee - nonEventExpense))}
             </span>
           </div>
-          <div className="responsive-table">
-            <table className="report-table responsive-report-table">
-              <thead>
-                <tr>
-                  <th>Tanggal</th>
-                  <th>Keterangan</th>
-                  <th>Arah</th>
-                  <th>Jumlah</th>
-                </tr>
-              </thead>
-              <tbody>
-                {nonEventDetailTx.map((t) => (
-                  <tr key={t.id}>
-                    <td data-label="Tanggal">{dateId.format(t.transactionDate)}</td>
-                    <td data-label="Keterangan">{t.description}</td>
-                    <td data-label="Arah"><span className={t.direction === "IN" ? "money-in" : "money-out"}>{t.direction === "IN" ? "Masuk" : "Keluar"}</span></td>
-                    <td data-label="Jumlah" className={t.direction === "IN" ? "money-in" : "money-out"}>{t.direction === "IN" ? "+" : "-"}{rupiah.format(Number(t.amount))}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <MensosTransactionTable
+            transactions={nonEventDetailTx.map((t) => ({
+              id: t.id,
+              date: t.transactionDate.toISOString(),
+              description: t.description,
+              direction: t.direction as "IN" | "OUT",
+              amount: Number(t.amount),
+              source: t.source,
+              incomeTypeName: t.incomeType?.name || null,
+              expenseTypeName: t.expenseType?.name || null,
+            }))}
+          />
         </section>
       )}
 
