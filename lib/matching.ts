@@ -259,6 +259,16 @@ export function duplicateSkipReason(duplicate: { id: string; source: Transaction
   return `Duplikasi dari sumber lain (duplikasi dari transaksi ${duplicate.id} yang berasal dari ${duplicate.source})`;
 }
 
+/** Ambil id transaksi asli dari teks skipReason duplikat lintas-sumber. */
+export function parseDuplicateOfId(skipReason: string | null | undefined): string | null {
+  const match = String(skipReason || "").match(/duplikasi dari transaksi ([a-z0-9]+) yang berasal/i);
+  return match?.[1] ?? null;
+}
+
+export function isDuplicateSkipReason(skipReason: string | null | undefined) {
+  return String(skipReason || "").startsWith("Duplikasi dari sumber lain");
+}
+
 type MatchableIncomeType = IncomeType & { event: Event };
 
 export function findIncomeMatch(amount: number, incomeTypes: MatchableIncomeType[]) {

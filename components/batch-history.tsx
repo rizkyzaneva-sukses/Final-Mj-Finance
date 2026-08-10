@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, CheckCircle2, Clock3, FileUp, FileWarning } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowRight, CheckCircle2, Clock3, FileWarning, LoaderCircle, Undo2 } from "lucide-react";
 import { dateId } from "@/lib/format";
 
 type Batch = {
@@ -38,14 +39,67 @@ function matchesFilter(batch: Batch, filter: FilterKey): boolean {
   return true;
 }
 
-export function BatchHistory({ batches }: { batches: Batch[] }) {
+export function BatchHistory({
+  batches,
+  canUndo = false,
+  undoableIds = [],
+}: {
+  batches: Batch[];
+  canUndo?: boolean;
+  undoableIds?: string[];
+}) {
+  const router = useRouter();
   const [filter, setFilter] = useState<FilterKey>("ALL");
+  const [undoingId, setUndoingId] = useState<string | null>(null);
+  const [error, setError] = useState("");
   const filtered = batches.filter((b) => matchesFilter(b, filter));
+  const undoableSet = new Set(undoableIds);
+
+  async function undoBatch(batch: Batch) {
+    const isFailed = batch.status === "FAILED";
+    const message = isFailed
+      ? `Hapus riwayat impor gagal "${batch.fileName}"?`
+      : [
+          `Batalkan impor "${batch.fileName}"?`,
+          "",
+          `• ${batch.importedRows} transaksi akan dihapus dari buku`,
+          "• Saldo rekening akan kembali seperti sebelum impor ini",
+          "• Saldo awal tidak terpengaruh",
+          "• Hanya 2 impor selesai terakhir yang bisa dibatalkan",
+          "",
+          "Tindakan ini tidak bisa dibatalkan lagi.",
+        ].join("\n");
+    if (!window.confirm(message)) return;
+
+    setUndoingId(batch.id);
+    setError("");
+    try {
+      const response = await fetch(`/api/imports/${batch.id}/undo`, { method: "POST" });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(body.error || "Impor gagal dibatalkan.");
+        return;
+      }
+      router.refresh();
+    } catch {
+      setError("Koneksi gagal. Coba lagi.");
+    } finally {
+      setUndoingId(null);
+    }
+  }
 
   return (
     <section className="panel">
       <div className="panel-title">
-        <div><span className="eyebrow">RIWAYAT</span><h2>Impor terakhir</h2></div>
+        <div>
+          <span className="eyebrow">RIWAYAT</span>
+          <h2>Impor terakhir</h2>
+        </div>
+        {canUndo && (
+          <small className="panel-title-note">
+            Batalkan hanya untuk 2 impor selesai terakhir · hapus transaksi + riwayat
+          </small>
+        )}
       </div>
       <div className="batch-filter-tabs" role="tablist">
         {FILTERS.map((f) => {
@@ -62,27 +116,42 @@ export function BatchHistory({ batches }: { batches: Batch[] }) {
           );
         })}
       </div>
+      {error && <div className="form-error" style={{ margin: "0 .85rem .5rem" }}>{error}</div>}
       {filtered.length ? (
         <div className="batch-list">
-          {filtered.map((batch) => (
-            <div className="batch-item" key={batch.id}>
-              <div className={`batch-status status-${batch.status.toLowerCase()}`}>
-                {batch.status === "COMPLETED" ? <CheckCircle2 /> : batch.status === "FAILED" ? <FileWarning /> : <Clock3 />}
+          {filtered.map((batch) => {
+            const showUndo = canUndo && undoableSet.has(batch.id) && (batch.status === "COMPLETED" || batch.status === "FAILED");
+            return (
+              <div className="batch-item" key={batch.id}>
+                <div className={`batch-status status-${batch.status.toLowerCase()}`}>
+                  {batch.status === "COMPLETED" ? <CheckCircle2 /> : batch.status === "FAILED" ? <FileWarning /> : <Clock3 />}
+                </div>
+                <div className="batch-main">
+                  <strong>{batch.fileName}</strong>
+                  <small>{dateId.format(new Date(batch.createdAt))} · {batch.source.replaceAll("_", " ")}{batch.accountNumber ? ` · ${batch.accountNumber}` : ""}</small>
+                  {batch.accountHolder && <small>{batch.accountHolder}</small>}
+                  {batch.errorMessage && <span>{batch.errorMessage}</span>}
+                  {batch.status === "REVIEW" && <Link href={`/imports/${batch.id}`}>Lanjut review <ArrowRight size={14} /></Link>}
+                  {showUndo && (
+                    <button
+                      type="button"
+                      className="batch-undo-link"
+                      disabled={undoingId === batch.id}
+                      onClick={() => void undoBatch(batch)}
+                    >
+                      {undoingId === batch.id ? <LoaderCircle className="spin" size={14} /> : <Undo2 size={14} />}
+                      {batch.status === "FAILED" ? "Hapus riwayat" : "Batalkan impor"}
+                    </button>
+                  )}
+                </div>
+                <div className="batch-numbers"><b>{batch.importedRows}</b><small>masuk</small></div>
+                <div className="batch-numbers"><b>{batch.matchedRows}</b><small>cocok</small></div>
+                <div className="batch-numbers"><b>{batch.unmatchedRows}</b><small>tinjau</small></div>
+                <div className="batch-numbers"><b>{batch.skippedRows}</b><small>skip</small></div>
+                <div className="batch-numbers"><b>{batch.duplicateRows}</b><small>duplikat</small></div>
               </div>
-              <div className="batch-main">
-                <strong>{batch.fileName}</strong>
-                <small>{dateId.format(new Date(batch.createdAt))} · {batch.source.replaceAll("_", " ")}{batch.accountNumber ? ` · ${batch.accountNumber}` : ""}</small>
-                {batch.accountHolder && <small>{batch.accountHolder}</small>}
-                {batch.errorMessage && <span>{batch.errorMessage}</span>}
-                {batch.status === "REVIEW" && <Link href={`/imports/${batch.id}`}>Lanjut review <ArrowRight size={14} /></Link>}
-              </div>
-              <div className="batch-numbers"><b>{batch.importedRows}</b><small>masuk</small></div>
-              <div className="batch-numbers"><b>{batch.matchedRows}</b><small>cocok</small></div>
-              <div className="batch-numbers"><b>{batch.unmatchedRows}</b><small>tinjau</small></div>
-              <div className="batch-numbers"><b>{batch.skippedRows}</b><small>skip</small></div>
-              <div className="batch-numbers"><b>{batch.duplicateRows}</b><small>duplikat</small></div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="empty-state"><span>+</span><p>Tidak ada impor untuk filter ini.</p></div>
