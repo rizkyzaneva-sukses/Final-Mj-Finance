@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import { Check, LoaderCircle, X, Scale, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { rupiah } from "@/lib/format";
 import { parseIdrInput } from "@/lib/money";
@@ -54,16 +55,19 @@ export function ReconciliationModal({
   const [skippedLabels, setSkippedLabels] = useState<string[]>([]);
   const [unclaimed, setUnclaimed] = useState<ReconciliationUnclaimed | null>(null);
 
+  const router = useRouter();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    // Paksa data dashboard/server components terbaru (bukan angka stale di props).
+    router.refresh();
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, []);
+  }, [router]);
 
   async function runReconciliation() {
     setError("");
@@ -106,7 +110,11 @@ export function ReconciliationModal({
     try {
       const response = await fetch("/api/reconciliation", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+        },
+        cache: "no-store",
         body: JSON.stringify({ items }),
       });
       const body = await response.json();
@@ -192,7 +200,9 @@ export function ReconciliationModal({
                       ) : (
                         <small>Opsional</small>
                       )}
-                      <small>Sistem: {rupiah.format(account.calculatedBalance)}</small>
+                      <small title="Preview dari dashboard; angka final dihitung ulang dari DB saat cek">
+                        Preview dashboard: {rupiah.format(account.calculatedBalance)}
+                      </small>
                     </div>
                   </div>
                 );
@@ -236,7 +246,7 @@ export function ReconciliationModal({
                         <strong>{rupiah.format(result.actualBalance)}</strong>
                       </div>
                       <div>
-                        <small>Sistem</small>
+                        <small>Sistem (live)</small>
                         <strong>{rupiah.format(result.calculatedBalance)}</strong>
                       </div>
                       <div>
@@ -246,6 +256,9 @@ export function ReconciliationModal({
                         </strong>
                       </div>
                     </div>
+                    <p className="recon-calc-note">
+                      Sistem = mutasi bank + saldo awal MANUAL · {result.transactionCount} baris · dihitung ulang dari DB
+                    </p>
 
                     {!result.match && result.transactions.length > 0 && (
                       <div className="recon-problem-block">

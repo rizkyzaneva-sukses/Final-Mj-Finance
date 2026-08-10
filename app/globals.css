@@ -161,6 +161,7 @@ h1, h2 { font-family: Georgia, "Times New Roman", serif; letter-spacing: -.035em
 .recon-result-metrics div { min-width: 0; }
 .recon-result-metrics small { display: block; color: var(--muted); font-size: .62rem; text-transform: uppercase; letter-spacing: .03em; }
 .recon-result-metrics strong { display: block; margin-top: .15rem; font-size: .82rem; font-family: Georgia, serif; letter-spacing: -.02em; }
+.recon-calc-note { margin: .45rem 0 0; color: var(--muted); font-size: .68rem; line-height: 1.35; }
 .recon-problem-block { margin-top: .55rem; }
 .recon-expand-btn { display: inline-flex; align-items: center; gap: .3rem; padding: 0; border: 0; background: none; color: #dc2626; font-weight: 800; font-size: .75rem; cursor: pointer; }
 .recon-problem-list { margin-top: .45rem; display: grid; gap: .35rem; max-height: 180px; overflow-y: auto; }

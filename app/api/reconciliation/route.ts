@@ -4,8 +4,10 @@ import { db } from "@/lib/db";
 import {
   TRACKED_ACCOUNTS,
   balanceSourceWhere,
-  holderMatches,
+  digitsOnlyAccount,
   normalizeHolder,
+  resolveTrackedAccountLabel,
+  trackedLabelByHolder,
 } from "@/lib/accounts";
 import { roundMoney } from "@/lib/money";
 
@@ -28,18 +30,18 @@ type ReconciliationItem = {
 };
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-const digitsOnly = (value: unknown) => String(value ?? "").replace(/\D/g, "");
+const digitsOnly = (value: unknown) => digitsOnlyAccount(String(value ?? ""));
 
 /** Cocokkan sebuah teks (label dari dashboard atau nama pemilik) ke rekening terpantau. */
 function trackedByLabel(value: unknown) {
   const normalized = normalizeHolder(String(value ?? ""));
   if (!normalized) return null;
-  return (
-    TRACKED_ACCOUNTS.find(
-      (tracked) => normalizeHolder(tracked.label) === normalized || holderMatches(normalized, tracked.matcher),
-    )?.label ?? null
-  );
+  const exact = TRACKED_ACCOUNTS.find((tracked) => normalizeHolder(tracked.label) === normalized);
+  if (exact) return exact.label;
+  return trackedLabelByHolder(normalized);
 }
 
 export async function POST(request: Request) {
@@ -98,21 +100,24 @@ export async function POST(request: Request) {
     orderBy: { transactionDate: "asc" },
   });
 
-  // Klasifikasi baris ke rekening terpantau: nama pemilik dulu, lalu nomor rekening
-  // yang sudah terbukti milik rekening itu (untuk baris yang nama pemiliknya tidak terbaca).
+  // Klasifikasi baris ke rekening terpantau: nama → nomor resmi TRACKED → nomor yang
+  // pernah muncul bersama nama pemilik. Opening balance MANUAL ikut lewat balanceSourceWhere().
   const numberToTracked = new Map<string, string>();
+  for (const account of TRACKED_ACCOUNTS) {
+    for (const number of account.accountNumbers ?? []) {
+      if (number) numberToTracked.set(number, account.label);
+    }
+  }
   const rowTracked = new Map<string, string | null>();
   for (const row of rows) {
-    const tracked = TRACKED_ACCOUNTS.find((account) => holderMatches(row.accountHolder, account.matcher));
-    rowTracked.set(row.id, tracked?.label ?? null);
+    const byHolder = trackedLabelByHolder(row.accountHolder);
+    rowTracked.set(row.id, byHolder);
     const number = digitsOnly(row.accountNumber);
-    if (tracked && number && !numberToTracked.has(number)) numberToTracked.set(number, tracked.label);
+    if (byHolder && number && !numberToTracked.has(number)) numberToTracked.set(number, byHolder);
   }
   for (const row of rows) {
     if (rowTracked.get(row.id)) continue;
-    const number = digitsOnly(row.accountNumber);
-    const label = number ? numberToTracked.get(number) : undefined;
-    if (label) rowTracked.set(row.id, label);
+    rowTracked.set(row.id, resolveTrackedAccountLabel(row.accountHolder, row.accountNumber, numberToTracked));
   }
 
   const claimedIds = new Set<string>();
@@ -131,6 +136,7 @@ export async function POST(request: Request) {
     });
     for (const row of owned) claimedIds.add(row.id);
 
+    // SUM(IN) - SUM(OUT) atas mutasi bank + saldo awal MANUAL (tidak filter status).
     const calculatedBalance = roundMoney(
       owned.reduce((sum, row) => {
         const value = Number(row.amount);

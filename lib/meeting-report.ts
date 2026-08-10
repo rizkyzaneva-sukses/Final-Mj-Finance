@@ -7,8 +7,10 @@ import {
   TRACKED_ACCOUNTS,
   UNCLAIMED_ACCOUNT_LABEL,
   balanceSourceWhere,
-  holderMatches,
+  digitsOnlyAccount,
   qrisResetKey,
+  resolveTrackedAccountLabel,
+  trackedLabelByHolder,
 } from "@/lib/accounts";
 
 /** Sumber mutasi bank yang dirinci pada `bySource`. */
@@ -120,23 +122,24 @@ export async function getBalanceEstimateSummary(endDate: Date) {
     if (!latestResetByKey.has(key)) latestResetByKey.set(key, reset.resetAt);
   }
 
-  // Peta nomor rekening -> label, supaya baris dengan `accountHolder` kosong (umum pada impor
-  // screenshot) tetap terklaim ke rekening yang benar lewat nomor rekeningnya.
+  // Peta nomor rekening -> label: nomor resmi dulu, lalu nomor yang pernah muncul
+  // bersama nama pemilik yang cocok (screenshot sering kosong accountHolder).
   const numberToLabel = new Map<string, string>();
+  for (const account of TRACKED_ACCOUNTS) {
+    for (const number of account.accountNumbers ?? []) {
+      if (number) numberToLabel.set(number, account.label);
+    }
+  }
   for (const row of [...balanceRows, ...qrisRows]) {
-    const number = digitsOnly(row.accountNumber);
+    const number = digitsOnlyAccount(row.accountNumber) || digitsOnly(row.accountNumber);
     if (!number || numberToLabel.has(number)) continue;
-    const owner = TRACKED_ACCOUNTS.find((account) => holderMatches(row.accountHolder, account.matcher));
-    if (owner) numberToLabel.set(number, owner.label);
+    const ownerLabel = trackedLabelByHolder(row.accountHolder);
+    if (ownerLabel) numberToLabel.set(number, ownerLabel);
   }
 
   /** Menentukan pemilik satu baris. Selalu mengembalikan paling banyak SATU label — tidak ada baris yang terhitung dobel. */
-  const resolveLabel = (accountHolder: string | null, accountNumber: string | null) => {
-    const byHolder = TRACKED_ACCOUNTS.find((account) => holderMatches(accountHolder, account.matcher));
-    if (byHolder) return byHolder.label;
-    const number = digitsOnly(accountNumber);
-    return number ? numberToLabel.get(number) ?? null : null;
-  };
+  const resolveLabel = (accountHolder: string | null, accountNumber: string | null) =>
+    resolveTrackedAccountLabel(accountHolder, accountNumber, numberToLabel);
 
   type BalanceRow = (typeof balanceRows)[number];
   type QrisRow = (typeof qrisRows)[number];
@@ -202,6 +205,7 @@ export async function getBalanceEstimateSummary(endDate: Date) {
     }, {} as Record<BankSourceKey, { income: number; expense: number; net: number }>);
 
     const accountNumber =
+      account.accountNumbers?.[0] ??
       relevant.find((row) => digitsOnly(row.accountNumber))?.accountNumber ??
       (qrisByLabel.get(account.label) ?? []).find((row) => digitsOnly(row.accountNumber))?.accountNumber ??
       null;
