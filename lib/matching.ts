@@ -2,7 +2,42 @@ import { createHash } from "node:crypto";
 import type { Event, IncomeType, Prisma, TransactionDirection, TransactionSource, TransactionStatus } from "@prisma/client";
 import { db } from "@/lib/db";
 
+/** Teks kanonik (dokumentasi / UI). Deteksi aktual pakai `isBatchQrisSettlementDescription`. */
 export const BATCH_QRIS_MARKER = "TRF BATCH MYBB - PEMBAYARAN";
+
+/**
+ * Normalisasi deskripsi agar deteksi pencairan QRIS tahan OCR:
+ * spasi berlebih, en/em-dash, underscore, dll.
+ */
+export function normalizeBatchQrisText(description: string) {
+  return String(description || "")
+    .toUpperCase()
+    .replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-") // berbagai dash unicode → -
+    .replace(/[_/|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * True jika baris mutasi bank adalah pencairan gabungan QRIS (MYBB).
+ * Harus auto-SKIP untuk mapping event, tapi tetap menggerakkan saldo bank.
+ *
+ * Mencakup variasi OCR / PDF:
+ * - TRF BATCH MYBB - PEMBAYARAN
+ * - TRF BATCH MYBB - PEMBAYARAN TRX ...
+ * - BATCH MYBB PEMBAYARAN (tanpa TRF / tanpa dash)
+ * - TRF  BATCH  MYBB–PEMBAYARAN (spasi / dash aneh)
+ */
+export function isBatchQrisSettlementDescription(description: string) {
+  const text = normalizeBatchQrisText(description);
+  if (!text) return false;
+  if (text.includes(BATCH_QRIS_MARKER)) return true;
+  // Inti: BATCH + MYBB + PEMBAYARAN (urutan bebas antar kata, spasi/dash diabaikan)
+  if (/\bBATCH\b/.test(text) && /\bMYBB\b/.test(text) && /\bPEMBAYARAN\b/.test(text)) return true;
+  // Cadangan: TRF BATCH MYBB tanpa kata PEMBAYARAN (OCR potong)
+  if (/\bTRF\b/.test(text) && /\bBATCH\b/.test(text) && /\bMYBB\b/.test(text)) return true;
+  return false;
+}
 
 export type NormalizedTransaction = {
   transactionDate: Date;
@@ -371,7 +406,7 @@ async function persistTransactions(batchId: string, rows: NormalizedTransaction[
 
   const payloads: Prisma.TransactionCreateManyInput[] = [];
   for (const { row, hash } of fresh) {
-    const isBatchQris = row.description.toUpperCase().includes(BATCH_QRIS_MARKER);
+    const isBatchQris = isBatchQrisSettlementDescription(row.description);
     const fuzzyDupe = isBatchQris ? null : matchDuplicate(row, duplicateIndex);
 
     let status: TransactionStatus;
@@ -387,6 +422,7 @@ async function persistTransactions(batchId: string, rows: NormalizedTransaction[
       status = "UNMATCHED";
     }
 
+    // Auto-match kode unik: jangan pernah menimpa skip QRIS batch / fuzzy duplikat.
     const match =
       row.direction === "IN" && !isBatchQris && !fuzzyDupe
         ? findIncomeMatch(row.amount, incomeTypes)
@@ -492,7 +528,8 @@ export async function finalizeImportBatch(batchId: string) {
     },
   });
 
-  const pending = await db.transaction.findMany({
+  // Baris yang belum diputuskan manusia (null/SYSTEM): jaring pengaman QRIS batch + fuzzy duplikat.
+  const stillPending = await db.transaction.findMany({
     where: {
       importBatchId: batchId,
       isDraft: true,
@@ -501,8 +538,8 @@ export async function finalizeImportBatch(batchId: string) {
     },
     select: {
       id: true,
-      transactionDate: true,
       description: true,
+      transactionDate: true,
       amount: true,
       direction: true,
       source: true,
@@ -512,8 +549,31 @@ export async function finalizeImportBatch(batchId: string) {
     },
   });
 
+  let batchQrisSkipped = 0;
+  const batchQrisIds = stillPending
+    .filter((item) => isBatchQrisSettlementDescription(item.description))
+    .map((item) => item.id);
+  if (batchQrisIds.length) {
+    await db.transaction.updateMany({
+      where: { id: { in: batchQrisIds } },
+      data: {
+        status: "SKIPPED",
+        skipReason: "Gabungan pencairan QRIS, detail dihitung dari file QRIS.",
+        ministryId: null,
+        eventId: null,
+        incomeTypeId: null,
+        expenseTypeId: null,
+        assignedAt: null,
+        assignedByRole: "SYSTEM",
+      },
+    });
+    batchQrisSkipped = batchQrisIds.length;
+  }
+
   let duplicateSkipped = 0;
-  const nonBatchQris = pending.filter((item) => !item.description.toUpperCase().includes(BATCH_QRIS_MARKER));
+  const nonBatchQris = stillPending.filter(
+    (item) => !isBatchQrisSettlementDescription(item.description),
+  );
   if (nonBatchQris.length) {
     const candidates = nonBatchQris.map((item) => ({ id: item.id, row: { ...item, amount: toNumber(item.amount) } }));
     const duplicateIndex = buildDuplicateIndex(
@@ -544,7 +604,12 @@ export async function finalizeImportBatch(batchId: string) {
     data: { isDraft: false },
   });
   await recalculateBatchStats(batchId);
-  return { count: result.count, duplicateSkipped, droppedExactDuplicates: droppedExact.count };
+  return {
+    count: result.count,
+    duplicateSkipped,
+    batchQrisSkipped,
+    droppedExactDuplicates: droppedExact.count,
+  };
 }
 
 /** Recalculate imported/matched/unmatched/skipped counts for a batch from actual transaction data. */

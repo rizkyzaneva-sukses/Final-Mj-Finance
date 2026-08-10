@@ -7,7 +7,7 @@ import type {
 } from "@prisma/client";
 import { excludeOpeningBalanceWhere } from "@/lib/accounts";
 import { db } from "@/lib/db";
-import { BATCH_QRIS_MARKER, fingerprint, type NormalizedTransaction } from "@/lib/matching";
+import { BATCH_QRIS_MARKER, fingerprint, isBatchQrisSettlementDescription, type NormalizedTransaction } from "@/lib/matching";
 import { parseIdrInput, roundMoney } from "@/lib/money";
 
 type HistoricalKind = "MUTASI" | "QRIS";
@@ -137,7 +137,7 @@ function parseMutasi(workbook: XLSX.WorkBook): ParsedHistoricalWorkbook {
 
     const description = text(row.bank_description);
     if (!description) throw new Error(`Deskripsi mutasi baris ${rowNumber} kosong.`);
-    const forceSkip = text(row.qris_batch_flag).toUpperCase() === "YES" || description.toUpperCase().includes(BATCH_QRIS_MARKER);
+    const forceSkip = text(row.qris_batch_flag).toUpperCase() === "YES" || isBatchQrisSettlementDescription(description);
     const accountHolder = optionalText(row.account_holder);
     const accountNumber = optionalText(row.account_number)?.replace(/\D/g, "") || null;
     const mapping: HistoricalMapping = {

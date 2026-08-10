@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { getReportData } from "@/lib/reports";
-import { BATCH_QRIS_MARKER } from "@/lib/matching";
+import { BATCH_QRIS_MARKER, isBatchQrisSettlementDescription } from "@/lib/matching";
 import { qrisFeeFor, roundMoney } from "@/lib/money";
 import {
   BANK_SOURCES,
@@ -221,7 +221,7 @@ export async function getBalanceEstimateSummary(endDate: Date) {
       qrisResetKey(null, account.matcher),
     ].reduce<Date | null>((latest, key) => (key ? laterOf(latest, latestResetByKey.get(key) ?? null) : latest), null);
     const lastDisbursementAt = bankRows
-      .filter((row) => row.direction === "IN" && row.description.toUpperCase().includes(BATCH_QRIS_MARKER))
+      .filter((row) => row.direction === "IN" && isBatchQrisSettlementDescription(row.description))
       .reduce<Date | null>((latest, row) => laterOf(latest, row.transactionDate), null);
     const qrisCutoff = laterOf(lastResetAt, lastDisbursementAt);
 
