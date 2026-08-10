@@ -28,6 +28,18 @@ export function fingerprint(transaction: NormalizedTransaction) {
   return createHash("sha256").update(stable).digest("hex");
 }
 
+/** Fingerprint unik untuk baris exact-duplikat (kolom fingerprint @unique). */
+export function saltedFingerprint(baseHash: string, salt: string) {
+  return createHash("sha256").update(`${baseHash}|EXACT_DUP|${salt}`).digest("hex");
+}
+
+/** Fingerprint baru saat user memaksa baris exact-duplikat dianggap unik. */
+export function forceUniqueFingerprint(baseHash: string) {
+  return createHash("sha256")
+    .update(`${baseHash}|FORCE_UNIQUE|${Date.now()}|${Math.random().toString(36).slice(2)}`)
+    .digest("hex");
+}
+
 /**
  * Normalize a description for fuzzy comparison.
  * - Converts to uppercase
@@ -259,14 +271,28 @@ export function duplicateSkipReason(duplicate: { id: string; source: Transaction
   return `Duplikasi dari sumber lain (duplikasi dari transaksi ${duplicate.id} yang berasal dari ${duplicate.source})`;
 }
 
+export function exactDuplicateSkipReason(originalId: string) {
+  return `Duplikat exact (fingerprint sama dengan transaksi ${originalId})`;
+}
+
 /** Ambil id transaksi asli dari teks skipReason duplikat lintas-sumber. */
 export function parseDuplicateOfId(skipReason: string | null | undefined): string | null {
-  const match = String(skipReason || "").match(/duplikasi dari transaksi ([a-z0-9]+) yang berasal/i);
-  return match?.[1] ?? null;
+  const fuzzy = String(skipReason || "").match(/duplikasi dari transaksi ([a-z0-9]+) yang berasal/i);
+  if (fuzzy?.[1]) return fuzzy[1];
+  const exact = String(skipReason || "").match(/fingerprint sama dengan transaksi ([a-z0-9]+)/i);
+  return exact?.[1] ?? null;
 }
 
 export function isDuplicateSkipReason(skipReason: string | null | undefined) {
   return String(skipReason || "").startsWith("Duplikasi dari sumber lain");
+}
+
+export function isExactDuplicateSkipReason(skipReason: string | null | undefined) {
+  return String(skipReason || "").startsWith("Duplikat exact");
+}
+
+export function isAnyDuplicateSkipReason(skipReason: string | null | undefined) {
+  return isDuplicateSkipReason(skipReason) || isExactDuplicateSkipReason(skipReason);
 }
 
 type MatchableIncomeType = IncomeType & { event: Event };
@@ -292,20 +318,47 @@ async function persistTransactions(batchId: string, rows: NormalizedTransaction[
   });
 
   // 1) Cek fingerprint sekali jalan (dulu satu `findUnique` per baris = N+1).
+  // Exact-duplikat TETAP disimpan sebagai baris SKIPPED (fingerprint di-salt)
+  // supaya reviewer bisa melihat apa yang bentrok dan memaksa jadi unik.
   const prepared = rows.map((row) => ({ row, hash: fingerprint(row) }));
   const existing = await db.transaction.findMany({
     where: { fingerprint: { in: [...new Set(prepared.map((item) => item.hash))] } },
-    select: { fingerprint: true },
+    select: {
+      id: true,
+      fingerprint: true,
+      source: true,
+      description: true,
+      amount: true,
+      direction: true,
+      transactionDate: true,
+      accountHolder: true,
+      accountNumber: true,
+      status: true,
+      isDraft: true,
+    },
   });
-  const seenHashes = new Set(existing.map((item) => item.fingerprint));
+  const existingByHash = new Map(existing.map((item) => [item.fingerprint, item]));
 
+  type ExactDupeItem = { row: NormalizedTransaction; hash: string; originalId: string | null };
   const fresh: typeof prepared = [];
+  const exactDupes: ExactDupeItem[] = [];
+  // Hash yang pertama kali muncul di file ini (belum di DB) — baris berikutnya dengan hash sama = exact dup dalam file.
+  const firstFreshByHash = new Map<string, true>();
+
   for (const item of prepared) {
-    if (seenHashes.has(item.hash)) {
+    const known = existingByHash.get(item.hash);
+    if (known) {
+      exactDupes.push({ row: item.row, hash: item.hash, originalId: known.id });
       counts.duplicate++;
       continue;
     }
-    seenHashes.add(item.hash);
+    if (firstFreshByHash.has(item.hash)) {
+      // Identik dengan baris lain di file yang sama (bukan di buku).
+      exactDupes.push({ row: item.row, hash: item.hash, originalId: null });
+      counts.duplicate++;
+      continue;
+    }
+    firstFreshByHash.set(item.hash, true);
     fresh.push(item);
   }
 
@@ -363,9 +416,52 @@ async function persistTransactions(batchId: string, rows: NormalizedTransaction[
     if (fuzzyDupe) counts.fuzzyDuplicate++;
   }
 
-  // 3) Simpan massal (dulu satu `create` per baris = N+1).
+  // 3) Simpan massal baris non-exact-dup (dulu satu `create` per baris = N+1).
   for (let start = 0; start < payloads.length; start += CREATE_CHUNK_SIZE) {
     await db.transaction.createMany({ data: payloads.slice(start, start + CREATE_CHUNK_SIZE) });
+  }
+
+  // 4) Exact-duplikat: simpan sebagai SKIPPED dengan fingerprint di-salt agar lolos @unique.
+  //    Original id dari DB, atau (untuk dobel dalam file) baris first-fresh yang baru disimpan.
+  if (exactDupes.length) {
+    const freshOriginals = await db.transaction.findMany({
+      where: {
+        importBatchId: batchId,
+        fingerprint: { in: [...new Set(exactDupes.map((item) => item.hash))] },
+      },
+      select: { id: true, fingerprint: true },
+    });
+    const freshIdByHash = new Map(freshOriginals.map((item) => [item.fingerprint, item.id]));
+
+    const exactPayloads: Prisma.TransactionCreateManyInput[] = exactDupes.map((item, index) => {
+      const originalId = item.originalId || freshIdByHash.get(item.hash) || null;
+      const salt = `${batchId}:${index}:${Date.now()}`;
+      return {
+        ...item.row,
+        fingerprint: saltedFingerprint(item.hash, salt),
+        importBatchId: batchId,
+        isDraft,
+        status: "SKIPPED" as TransactionStatus,
+        skipReason: originalId
+          ? exactDuplicateSkipReason(originalId)
+          : "Duplikat exact (baris identik dalam file yang sama)",
+        assignedByRole: "SYSTEM",
+        rawData: {
+          ...(typeof item.row.rawData === "object" && item.row.rawData && !Array.isArray(item.row.rawData)
+            ? (item.row.rawData as Record<string, unknown>)
+            : {}),
+          exactDuplicateOf: originalId,
+          baseFingerprint: item.hash,
+        },
+      };
+    });
+
+    for (let start = 0; start < exactPayloads.length; start += CREATE_CHUNK_SIZE) {
+      await db.transaction.createMany({ data: exactPayloads.slice(start, start + CREATE_CHUNK_SIZE) });
+    }
+
+    counts.imported += exactPayloads.length;
+    counts.skipped += exactPayloads.length;
   }
 
   return counts;
@@ -385,6 +481,17 @@ export async function stageImportTransactions(batchId: string, rows: NormalizedT
  * supaya keputusan manual reviewer tidak pernah ditimpa.
  */
 export async function finalizeImportBatch(batchId: string) {
+  // Exact-duplikat yang reviewer TIDAK paksa-unik: buang, jangan masuk buku
+  // (kalau di-finalize sebagai SKIPPED, mutasi bank tetap menggerakkan saldo → double count).
+  const droppedExact = await db.transaction.deleteMany({
+    where: {
+      importBatchId: batchId,
+      isDraft: true,
+      status: "SKIPPED",
+      skipReason: { startsWith: "Duplikat exact" },
+    },
+  });
+
   const pending = await db.transaction.findMany({
     where: {
       importBatchId: batchId,
@@ -436,19 +543,29 @@ export async function finalizeImportBatch(batchId: string) {
     where: { importBatchId: batchId, isDraft: true },
     data: { isDraft: false },
   });
-  return { count: result.count, duplicateSkipped };
+  await recalculateBatchStats(batchId);
+  return { count: result.count, duplicateSkipped, droppedExactDuplicates: droppedExact.count };
 }
 
 /** Recalculate imported/matched/unmatched/skipped counts for a batch from actual transaction data. */
 export async function recalculateBatchStats(batchId: string) {
-  const [imported, matched, unmatched, skipped] = await Promise.all([
+  const [imported, matched, unmatched, skipped, exactDuplicates] = await Promise.all([
     db.transaction.count({ where: { importBatchId: batchId } }),
     db.transaction.count({ where: { importBatchId: batchId, status: "MATCHED" } }),
     db.transaction.count({ where: { importBatchId: batchId, status: "UNMATCHED" } }),
     db.transaction.count({ where: { importBatchId: batchId, status: "SKIPPED" } }),
+    db.transaction.count({
+      where: { importBatchId: batchId, skipReason: { startsWith: "Duplikat exact" } },
+    }),
   ]);
   await db.importBatch.update({
     where: { id: batchId },
-    data: { importedRows: imported, matchedRows: matched, unmatchedRows: unmatched, skippedRows: skipped },
+    data: {
+      importedRows: imported,
+      matchedRows: matched,
+      unmatchedRows: unmatched,
+      skippedRows: skipped,
+      duplicateRows: exactDuplicates,
+    },
   });
 }

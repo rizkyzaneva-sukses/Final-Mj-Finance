@@ -4,7 +4,11 @@ import { ImportPreview } from "@/components/import-preview";
 import { BANK_SOURCES } from "@/lib/accounts";
 import { db } from "@/lib/db";
 import { getBalanceEstimateSummary } from "@/lib/meeting-report";
-import { isDuplicateSkipReason, parseDuplicateOfId } from "@/lib/matching";
+import {
+  isAnyDuplicateSkipReason,
+  isExactDuplicateSkipReason,
+  parseDuplicateOfId,
+} from "@/lib/matching";
 import { qrisFeeFor, roundMoney } from "@/lib/money";
 
 type Params = Promise<{ id: string }>;
@@ -66,7 +70,8 @@ export default async function ImportBatchPage({ params }: { params: Params }) {
     : [];
   const originalById = new Map(originalRows.map((row) => [row.id, row]));
 
-  // Estimasi saldo setelah terapkan: bank (semua status) + QRIS non-SKIPPED.
+  // Estimasi saldo setelah terapkan: bank (kecuali exact-dup yang masih SKIPPED — dibuang di finalize)
+  // + QRIS non-SKIPPED.
   const now = new Date();
   const balanceSummary = await getBalanceEstimateSummary(now);
   let bankDelta = 0;
@@ -75,6 +80,8 @@ export default async function ImportBatchPage({ params }: { params: Params }) {
   for (const row of batch.transactions) {
     const amount = Number(row.amount);
     const signed = row.direction === "IN" ? amount : -amount;
+    // Exact-duplikat yang masih SKIPPED tidak masuk buku (dihapus saat finalize).
+    if (isExactDuplicateSkipReason(row.skipReason) && row.status === "SKIPPED") continue;
     if (BANK_SOURCES.includes(row.source)) {
       bankDelta += signed;
     } else if (row.source === "QRIS_XLSX" && row.status !== "SKIPPED" && row.direction === "IN") {
@@ -100,6 +107,7 @@ export default async function ImportBatchPage({ params }: { params: Params }) {
   const rows = batch.transactions.map((row) => {
     const duplicateOfId = parseDuplicateOfId(row.skipReason);
     const original = duplicateOfId ? originalById.get(duplicateOfId) : null;
+    const isExact = isExactDuplicateSkipReason(row.skipReason);
     return {
       id: row.id,
       date: row.transactionDate.toISOString(),
@@ -115,7 +123,8 @@ export default async function ImportBatchPage({ params }: { params: Params }) {
       skipReason: row.skipReason,
       accountHolder: row.accountHolder,
       accountNumber: row.accountNumber,
-      isDuplicate: isDuplicateSkipReason(row.skipReason),
+      isDuplicate: isAnyDuplicateSkipReason(row.skipReason),
+      isExactDuplicate: isExact,
       duplicateOf: original
         ? {
             id: original.id,
@@ -131,7 +140,9 @@ export default async function ImportBatchPage({ params }: { params: Params }) {
           }
         : duplicateOfId
           ? { id: duplicateOfId, missing: true as const }
-          : null,
+          : isExact
+            ? { id: "same-file", missing: true as const }
+            : null,
     };
   });
 

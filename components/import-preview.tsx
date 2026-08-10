@@ -39,6 +39,7 @@ type Row = {
   accountHolder: string | null;
   accountNumber: string | null;
   isDuplicate?: boolean;
+  isExactDuplicate?: boolean;
   duplicateOf?: DuplicateOf | null;
 };
 
@@ -91,13 +92,17 @@ export function ImportPreview({
     UNMATCHED: rows.filter((row) => row.status === "UNMATCHED").length,
     SKIPPED: rows.filter((row) => row.status === "SKIPPED").length,
     DUPLICATE: rows.filter((row) => row.status === "SKIPPED" && row.isDuplicate).length,
+    EXACT: rows.filter((row) => row.status === "SKIPPED" && row.isExactDuplicate).length,
   };
-  const [activeStatus, setActiveStatus] = useState<"UNMATCHED" | "MATCHED" | "SKIPPED">(counts.UNMATCHED ? "UNMATCHED" : counts.MATCHED ? "MATCHED" : "SKIPPED");
-  const [skipFilter, setSkipFilter] = useState<SkipFilter>("ALL");
+  const [activeStatus, setActiveStatus] = useState<"UNMATCHED" | "MATCHED" | "SKIPPED">(
+    counts.EXACT ? "SKIPPED" : counts.UNMATCHED ? "UNMATCHED" : counts.MATCHED ? "MATCHED" : "SKIPPED",
+  );
+  const [skipFilter, setSkipFilter] = useState<SkipFilter>(counts.EXACT ? "DUPLICATE" : "ALL");
   const [query, setQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [assignmentTarget, setAssignmentTarget] = useState<AssignmentTarget | null>(null);
-  const [busyAction, setBusyAction] = useState<"finalize" | "discard" | "skip" | "reopen" | null>(null);
+  const [busyAction, setBusyAction] = useState<"finalize" | "discard" | "skip" | "reopen" | "forceUnique" | null>(null);
+  const [busyRowId, setBusyRowId] = useState<string | null>(null);
 
   const visibleRows = useMemo(() => {
     return rows.filter((row) => {
@@ -120,6 +125,7 @@ export function ImportPreview({
   const selectedRows = rows.filter((row) => selectedIds.includes(row.id));
   const mixedDirections = selectedRows.some((row) => row.direction !== selectedRows[0]?.direction);
   const selectedAreSkipped = selectedRows.length > 0 && selectedRows.every((row) => row.status === "SKIPPED");
+  const selectedAreExact = selectedRows.length > 0 && selectedRows.every((row) => row.isExactDuplicate);
 
   function badgeClass(status: "UNMATCHED" | "MATCHED" | "SKIPPED") {
     if (status === "UNMATCHED") return "badge-warning";
@@ -137,9 +143,10 @@ export function ImportPreview({
     else setSelectedIds((current) => [...new Set([...current, ...visibleIds])]);
   }
 
-  async function runBulkAction(action: "skip" | "reopen", ids = selectedIds) {
+  async function runBulkAction(action: "skip" | "reopen" | "forceUnique", ids = selectedIds) {
     if (!ids.length) return;
     setBusyAction(action);
+    if (ids.length === 1) setBusyRowId(ids[0]);
     const response = await fetch("/api/transactions/bulk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -149,10 +156,12 @@ export function ImportPreview({
     if (!response.ok) {
       alert(payload.error || "Aksi bulk gagal.");
       setBusyAction(null);
+      setBusyRowId(null);
       return;
     }
     setSelectedIds((current) => current.filter((id) => !ids.includes(id)));
     setBusyAction(null);
+    setBusyRowId(null);
     router.refresh();
   }
 
@@ -198,20 +207,23 @@ export function ImportPreview({
         <div><strong>{batch.matchedRows}</strong><small>cocok</small></div>
         <div><strong>{batch.unmatchedRows}</strong><small>tinjau</small></div>
         <div><strong>{batch.skippedRows}</strong><small>skip</small></div>
-        <div title="Baris identik persis yang sudah ada di buku (reupload) — tidak dimasukkan lagi"><strong>{batch.duplicateRows}</strong><small>duplikat exact</small></div>
+        <div title="Baris exact-duplikat di tab Dilewati (bisa dipaksa unik)"><strong>{batch.duplicateRows}</strong><small>duplikat exact</small></div>
       </div>
       {(batch.duplicateRows > 0 || counts.DUPLICATE > 0) && (
         <div className="import-duplicate-note">
           <TriangleAlert size={16} />
           <div>
-            <strong>Tentang angka duplikat</strong>
+            <strong>Tentang angka duplikat · file ≈ {batch.importedRows} baris (semua tampil di tabel)</strong>
             <small>
-              {batch.duplicateRows > 0 && (
-                <>{batch.duplicateRows} baris <b>exact</b> (fingerprint sama) sudah ada di buku — biasanya reupload file yang sama. Baris itu tidak dimasukkan lagi ke tabel di bawah.</>
+              {counts.EXACT > 0 && (
+                <>{counts.EXACT} baris <b>exact</b> (isi sama persis dengan yang sudah di buku, atau dobel di file). Lihat di <b>Dilewati → Duplikat</b>. Kalau yakin unik, klik <b>Paksa unik</b> agar ikut di-upload.</>
               )}
-              {batch.duplicateRows > 0 && counts.DUPLICATE > 0 && " · "}
-              {counts.DUPLICATE > 0 && (
-                <>{counts.DUPLICATE} baris di tab <b>Dilewati</b> cocok dengan transaksi lain di buku (bisa lintas sumber / OCR mirip). Buka tab Dilewati → filter Duplikat untuk melihat pasangannya. Kalau yakin bukan duplikat, pindahkan ke Perlu ditinjau.</>
+              {counts.EXACT > 0 && counts.DUPLICATE > counts.EXACT && " · "}
+              {counts.DUPLICATE > counts.EXACT && (
+                <>{counts.DUPLICATE - counts.EXACT} baris cocok secara fuzzy dengan sumber lain. Bisa dipindah ke Perlu ditinjau jika bukan duplikat.</>
+              )}
+              {counts.EXACT === 0 && counts.DUPLICATE > 0 && (
+                <>{counts.DUPLICATE} baris di tab Dilewati cocok dengan transaksi di buku. Filter Duplikat untuk melihat pasangannya.</>
               )}
             </small>
           </div>
@@ -259,7 +271,7 @@ export function ImportPreview({
       </div>
       <p className="import-balance-impact-note">
         {balanceImpact.isBankBatch
-          ? "Mutasi bank (termasuk yang di-skip) tetap menggerakkan saldo terkonfirmasi. Skip hanya soal klasifikasi laporan, bukan apakah uang masuk/keluar rekening."
+          ? "Mutasi bank (termasuk skip biasa) menggerakkan saldo. Duplikat exact yang masih di-skip tidak dihitung (dibuang saat apply)."
           : balanceImpact.isQrisBatch
             ? "QRIS yang statusnya Dilewati tidak menambah estimasi. Saldo terkonfirmasi bank baru berubah saat pencairan QRIS masuk mutasi bank."
             : "Angka dihitung dari draft batch ini terhadap saldo buku saat ini."}
@@ -285,7 +297,9 @@ export function ImportPreview({
       <div>
         <strong>{selectedIds.length} transaksi dipilih</strong>
         <small>
-          {selectedAreSkipped
+          {selectedAreExact
+            ? "Baris exact-duplikat: paksa unik agar ikut di-upload (fingerprint diganti)."
+            : selectedAreSkipped
             ? "Pindahkan ke Perlu ditinjau kalau yakin bukan duplikat / tidak perlu di-skip."
             : mixedDirections
               ? "Pilih transaksi dengan arah yang sama untuk bulk assign."
@@ -302,8 +316,8 @@ export function ImportPreview({
           <button className="button" disabled={busyAction !== null} onClick={() => runBulkAction("skip")}>{busyAction === "skip" ? <LoaderCircle className="spin" size={17} /> : <X size={17} />} Lewati</button>
         )}
         <button className="button" disabled={busyAction !== null} onClick={() => runBulkAction("reopen")}>
-          {busyAction === "reopen" ? <LoaderCircle className="spin" size={17} /> : <Undo2 size={17} />}
-          {selectedAreSkipped ? "Pindah ke Perlu ditinjau" : "Buka lagi"}
+          {busyAction === "reopen" || busyAction === "forceUnique" ? <LoaderCircle className="spin" size={17} /> : <Undo2 size={17} />}
+          {selectedAreExact ? "Paksa unik & tinjau" : selectedAreSkipped ? "Pindah ke Perlu ditinjau" : "Buka lagi"}
         </button>
       </div>
     </section>}
@@ -315,7 +329,8 @@ export function ImportPreview({
           <td data-label="Tanggal & sumber">
             <strong>{dateId.format(new Date(row.date))}</strong>
             <small>{row.source.replaceAll("_", " ")}</small>
-            {row.isDuplicate && <span className="duplicate-badge" title="Sistem menganggap baris ini sama dengan transaksi yang sudah ada di buku"><TriangleAlert size={13} /> Duplikat</span>}
+            {row.isExactDuplicate && <span className="duplicate-badge" title="Isi baris sama persis (fingerprint) dengan yang sudah di buku"><TriangleAlert size={13} /> Exact</span>}
+            {row.isDuplicate && !row.isExactDuplicate && <span className="duplicate-badge" title="Sistem menganggap baris ini sama dengan transaksi di buku"><TriangleAlert size={13} /> Duplikat</span>}
           </td>
           <td data-label="Rekening"><strong>{row.accountHolder || "Belum terbaca"}</strong><small>{row.accountNumber || "Tanpa nomor rekening"}</small></td>
           <td className="description-cell" data-label="Deskripsi">
@@ -323,7 +338,7 @@ export function ImportPreview({
             {row.skipReason && !row.isDuplicate && <small>{row.skipReason}</small>}
             {row.isDuplicate && row.duplicateOf && !("missing" in row.duplicateOf && row.duplicateOf.missing) && (
               <div className="duplicate-of-card">
-                <span className="duplicate-of-label">Cocok dengan baris di buku:</span>
+                <span className="duplicate-of-label">{row.isExactDuplicate ? "Exact sama dengan baris di buku:" : "Cocok dengan baris di buku:"}</span>
                 <strong>{dateId.format(new Date(row.duplicateOf.date))} · {row.duplicateOf.source.replaceAll("_", " ")}</strong>
                 <small>{row.duplicateOf.description}</small>
                 <small>
@@ -335,12 +350,38 @@ export function ImportPreview({
                 <Link className="duplicate-of-link" href={`/transactions?q=${encodeURIComponent(row.duplicateOf.description.slice(0, 40))}`}>
                   Lihat di transaksi <ChevronRight size={12} />
                 </Link>
+                {row.isExactDuplicate && (
+                  <button
+                    type="button"
+                    className="button button-primary force-unique-btn"
+                    disabled={busyAction !== null}
+                    onClick={() => void runBulkAction("forceUnique", [row.id])}
+                  >
+                    {busyRowId === row.id ? <LoaderCircle className="spin" size={14} /> : <Undo2 size={14} />}
+                    Paksa unik (ikut upload)
+                  </button>
+                )}
               </div>
             )}
             {row.isDuplicate && row.duplicateOf && "missing" in row.duplicateOf && row.duplicateOf.missing && (
               <div className="duplicate-of-card">
-                <span className="duplicate-of-label">Ditandai duplikat</span>
-                <small>Transaksi asli ({row.duplicateOf.id}) sudah tidak ada di buku. Aman dipindah ke Perlu ditinjau.</small>
+                <span className="duplicate-of-label">{row.isExactDuplicate ? "Duplikat exact" : "Ditandai duplikat"}</span>
+                <small>
+                  {row.duplicateOf.id === "same-file"
+                    ? "Baris identik dengan baris lain di file yang sama. Paksa unik hanya jika yakin ini transaksi berbeda."
+                    : `Transaksi asli (${row.duplicateOf.id}) sudah tidak ada di buku. Aman dipaksa unik / dipindah ke Perlu ditinjau.`}
+                </small>
+                {row.isExactDuplicate && (
+                  <button
+                    type="button"
+                    className="button button-primary force-unique-btn"
+                    disabled={busyAction !== null}
+                    onClick={() => void runBulkAction("forceUnique", [row.id])}
+                  >
+                    {busyRowId === row.id ? <LoaderCircle className="spin" size={14} /> : <Undo2 size={14} />}
+                    Paksa unik (ikut upload)
+                  </button>
+                )}
               </div>
             )}
           </td>
@@ -350,8 +391,17 @@ export function ImportPreview({
           <td className="row-actions" data-label="Aksi">
             {row.status === "SKIPPED" ? (
               <>
-                <button className="icon-button action-assign" title="Assign" onClick={() => setAssignmentTarget({ ids: [row.id], direction: row.direction, date: row.date, description: row.description, amount: row.amount, accountHolder: row.accountHolder, accountNumber: row.accountNumber })}><ChevronRight /></button>
-                <button className="icon-button" title={row.isDuplicate ? "Pindah ke Perlu ditinjau (bukan duplikat)" : "Kembalikan ke Perlu ditinjau"} onClick={() => void runBulkAction("reopen", [row.id])}><Undo2 /></button>
+                {!row.isExactDuplicate && (
+                  <button className="icon-button action-assign" title="Assign" onClick={() => setAssignmentTarget({ ids: [row.id], direction: row.direction, date: row.date, description: row.description, amount: row.amount, accountHolder: row.accountHolder, accountNumber: row.accountNumber })}><ChevronRight /></button>
+                )}
+                <button
+                  className="icon-button"
+                  title={row.isExactDuplicate ? "Paksa unik & pindah ke Perlu ditinjau" : row.isDuplicate ? "Pindah ke Perlu ditinjau (bukan duplikat)" : "Kembalikan ke Perlu ditinjau"}
+                  disabled={busyAction !== null}
+                  onClick={() => void runBulkAction(row.isExactDuplicate ? "forceUnique" : "reopen", [row.id])}
+                >
+                  {busyRowId === row.id ? <LoaderCircle className="spin" /> : <Undo2 />}
+                </button>
               </>
             ) : (
               <>

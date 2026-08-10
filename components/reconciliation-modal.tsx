@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, LoaderCircle, X, Scale, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { rupiah } from "@/lib/format";
 import { parseIdrInput } from "@/lib/money";
@@ -53,6 +53,14 @@ export function ReconciliationModal({
   const [skippedLabels, setSkippedLabels] = useState<string[]>([]);
   const [unclaimed, setUnclaimed] = useState<ReconciliationUnclaimed | null>(null);
 
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
   async function runReconciliation() {
     setError("");
 
@@ -68,7 +76,6 @@ export function ReconciliationModal({
     for (const account of accounts) {
       const raw = inputs[account.label] ?? "";
       if (!raw.trim()) {
-        // Kosong bukan berarti nol — rekening ini dilewati, tidak dikirim ke API.
         skipped.push(account.label);
         continue;
       }
@@ -77,15 +84,11 @@ export function ReconciliationModal({
         invalidLabels.push(account.label);
         continue;
       }
-      // API menerima `label` sebagai identitas alternatif, jadi rekening yang nomornya
-      // belum terbaca di data mutasi tetap bisa direkonsiliasi lewat nama pemilik.
       items.push({ accountNumber: account.accountNumber, label: account.label, actualBalance: parsed });
     }
 
     if (invalidLabels.length) {
-      setError(
-        `Nominal tidak valid untuk ${invalidLabels.join(", ")}. Gunakan format angka seperti 1.500.000.`
-      );
+      setError(`Nominal tidak valid untuk ${invalidLabels.join(", ")}. Gunakan format angka seperti 1.500.000.`);
       return;
     }
 
@@ -129,361 +132,215 @@ export function ReconciliationModal({
   }
 
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
-      <div
-        className="modal-card"
-        style={{ maxWidth: "640px" }}
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <button className="modal-close" onClick={onClose}>
+    <div className="modal-backdrop modal-backdrop-reconcile" onMouseDown={onClose}>
+      <div className="modal-card modal-card-reconcile" onMouseDown={(event) => event.stopPropagation()}>
+        <button className="modal-close" onClick={onClose} type="button">
           <X />
         </button>
 
-        <div className="eyebrow">REKONSILIASI</div>
-        <h2>Rekonsiliasi Saldo Rekening</h2>
-        <p style={{ color: "var(--muted)", margin: 0, fontSize: ".85rem" }}>
-          Masukkan saldo aktual dari mutasi bank untuk setiap rekening.
-          Sistem akan membandingkan dengan saldo yang dihitung dari data transaksi.
-        </p>
+        <header className="recon-header">
+          <div className="eyebrow">REKONSILIASI</div>
+          <h2>Rekonsiliasi Saldo Rekening</h2>
+          <p>Isi saldo aktual dari mutasi bank. Kosongkan rekening yang tidak diperiksa.</p>
+        </header>
 
-        {!results ? (
-          <>
-            <div style={{ display: "grid", gap: "1rem", marginTop: "0.5rem" }}>
+        <div className="recon-body">
+          {!results ? (
+            <div className="recon-form-grid">
               {accounts.map((account) => {
                 const key = account.label;
                 const raw = inputs[key] ?? "";
                 const parsed = parseIdrInput(raw);
                 const invalid = raw.trim() !== "" && parsed === null;
                 return (
-                  <div key={account.label} style={{ display: "grid", gap: "0.4rem" }}>
-                    <label style={{ fontWeight: 800, fontSize: ".82rem" }}>
-                      {account.label}
-                      <span style={{ fontWeight: 400, color: "var(--muted)", marginLeft: "0.5rem" }}>
-                        {account.accountNumber ? `Rek. ${account.accountNumber}` : "nomor rekening belum terbaca · dicocokkan lewat nama"}
-                      </span>
+                  <div className="recon-account-field" key={account.label}>
+                    <label>
+                      <strong>{account.label}</strong>
+                      <small>
+                        {account.accountNumber
+                          ? `Rek. ${account.accountNumber}`
+                          : "Nomor belum terbaca · lewat nama"}
+                      </small>
                     </label>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                      <span style={{ color: "var(--muted)", fontSize: ".85rem" }}>Rp</span>
+                    <div className="recon-input-row">
+                      <span>Rp</span>
                       <input
                         type="text"
                         inputMode="decimal"
-                        placeholder="Contoh: 1.500.000"
+                        placeholder="1.500.000"
                         value={raw}
                         onChange={(e) => {
-                          // Biarkan titik/koma/minus tetap diketik, parsing dilakukan terpisah.
                           const next = e.target.value.replace(/[^0-9.,\- ]/g, "");
                           setInputs((prev) => ({ ...prev, [key]: next }));
                         }}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter") runReconciliation();
+                          if (e.key === "Enter") void runReconciliation();
                         }}
-                        style={{ flex: 1 }}
                       />
                     </div>
-                    {invalid ? (
-                      <small style={{ color: "#ef4444", fontSize: ".75rem" }}>
-                        Format nominal tidak valid. Gunakan angka seperti 1.500.000.
-                      </small>
-                    ) : parsed !== null ? (
-                      <small style={{ color: "var(--muted)", fontSize: ".75rem" }}>
-                        Terbaca: <strong>{rupiah.format(parsed)}</strong>
-                      </small>
-                    ) : (
-                      <small style={{ color: "var(--muted)", fontSize: ".75rem" }}>
-                        Kosongkan bila rekening ini tidak ikut diperiksa.
-                      </small>
-                    )}
-                    <small style={{ color: "var(--muted)", fontSize: ".75rem" }}>
-                      Saldo dihitung dari sistem: {rupiah.format(account.calculatedBalance)}
-                    </small>
+                    <div className="recon-field-meta">
+                      {invalid ? (
+                        <small className="recon-meta-error">Format nominal tidak valid</small>
+                      ) : parsed !== null ? (
+                        <small>Terbaca: <b>{rupiah.format(parsed)}</b></small>
+                      ) : (
+                        <small>Opsional</small>
+                      )}
+                      <small>Sistem: {rupiah.format(account.calculatedBalance)}</small>
+                    </div>
                   </div>
                 );
               })}
             </div>
+          ) : (
+            <div className="recon-results">
+              {skippedLabels.length > 0 && (
+                <div className="recon-skipped-note">
+                  Dilewati (belum diisi): {skippedLabels.join(", ")}.
+                </div>
+              )}
 
-            {error && <div className="form-error">{error}</div>}
+              {results.map((result) => {
+                const resultKey = result.accountNumber || result.label || "";
+                return (
+                  <article
+                    key={resultKey}
+                    className={`recon-result-card ${result.match ? "is-match" : "is-mismatch"}`}
+                  >
+                    <div className="recon-result-head">
+                      <div>
+                        <strong>{result.label || result.accountNumber}</strong>
+                        <small>
+                          {result.accountNumber ? `Rek. ${result.accountNumber} · ` : ""}
+                          {result.transactionCount} transaksi
+                          {result.matchedByHolderOnlyCount
+                            ? ` · ${result.matchedByHolderOnlyCount} lewat nama`
+                            : ""}
+                        </small>
+                      </div>
+                      <div className={`recon-result-status ${result.match ? "ok" : "bad"}`}>
+                        {result.match ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+                        {result.match ? "Cocok" : "Selisih"}
+                      </div>
+                    </div>
 
+                    <div className="recon-result-metrics">
+                      <div>
+                        <small>Aktual</small>
+                        <strong>{rupiah.format(result.actualBalance)}</strong>
+                      </div>
+                      <div>
+                        <small>Sistem</small>
+                        <strong>{rupiah.format(result.calculatedBalance)}</strong>
+                      </div>
+                      <div>
+                        <small>Selisih</small>
+                        <strong className={result.match ? "ok" : "bad"}>
+                          {formatDiscrepancy(result.discrepancy)}
+                        </strong>
+                      </div>
+                    </div>
+
+                    {!result.match && result.transactions.length > 0 && (
+                      <div className="recon-problem-block">
+                        <button type="button" className="recon-expand-btn" onClick={() => toggleExpand(resultKey)}>
+                          <AlertTriangle size={13} />
+                          {expandedAccount === resultKey
+                            ? "Sembunyikan transaksi bermasalah"
+                            : `Lihat ${result.transactions.length} transaksi bermasalah`}
+                        </button>
+
+                        {expandedAccount === resultKey && (
+                          <div className="recon-problem-list">
+                            {result.transactions.map((txn) => (
+                              <div className="recon-problem-item" key={txn.id}>
+                                <div className="recon-problem-top">
+                                  <span>
+                                    {new Date(txn.date).toLocaleDateString("id-ID", {
+                                      day: "2-digit",
+                                      month: "short",
+                                      year: "numeric",
+                                    })}
+                                  </span>
+                                  <strong className={txn.direction === "IN" ? "money-in" : "money-out"}>
+                                    {txn.direction === "IN" ? "+" : "-"}
+                                    {rupiah.format(txn.amount)}
+                                  </strong>
+                                </div>
+                                <div className="recon-problem-desc">{txn.description}</div>
+                                <div className="recon-problem-foot">
+                                  <span className="recon-reason-chip">{txn.reason}</span>
+                                  <span>{txn.status}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+
+              {unclaimed && unclaimed.count > 0 && (
+                <article className="recon-unclaimed-card">
+                  <div className="recon-unclaimed-head">
+                    <AlertTriangle size={16} />
+                    {unclaimed.count} transaksi tidak terkait rekening mana pun
+                  </div>
+                  <p>
+                    Neto {rupiah.format(unclaimed.netAmount)}. Sering jadi penyebab selisih yang sulit dijelaskan.
+                  </p>
+                  {unclaimed.samples.length > 0 && (
+                    <div className="recon-unclaimed-list">
+                      {unclaimed.samples.map((txn) => (
+                        <div className="recon-unclaimed-item" key={txn.id}>
+                          <span>{txn.accountHolder || "Nama belum terbaca"} · {txn.description}</span>
+                          <strong className={txn.direction === "IN" ? "money-in" : "money-out"}>
+                            {txn.direction === "IN" ? "+" : "-"}{rupiah.format(txn.amount)}
+                          </strong>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </article>
+              )}
+            </div>
+          )}
+        </div>
+
+        <footer className="recon-footer">
+          {error && <div className="form-error">{error}</div>}
+          {!results ? (
             <button
               className="button button-primary button-wide"
               disabled={loading || accounts.length === 0}
-              onClick={runReconciliation}
+              onClick={() => void runReconciliation()}
+              type="button"
             >
               {loading ? <LoaderCircle className="spin" /> : <Scale />}
               {loading ? " Mengecek..." : " Rekonsiliasi Sekarang"}
             </button>
-          </>
-        ) : (
-          <>
-            {skippedLabels.length > 0 && (
-              <div
-                style={{
-                  marginTop: "0.5rem",
-                  padding: "0.6rem 0.8rem",
-                  border: "1px solid var(--line)",
-                  borderRadius: "12px",
-                  color: "var(--muted)",
-                  fontSize: ".78rem",
+          ) : (
+            <div className="recon-footer-actions">
+              <button
+                className="button"
+                type="button"
+                onClick={() => {
+                  setResults(null);
+                  setExpandedAccount(null);
+                  setSkippedLabels([]);
+                  setUnclaimed(null);
                 }}
               >
-                Dilewati karena saldo aktual belum diisi: {skippedLabels.join(", ")}.
-              </div>
-            )}
-
-            {/* Summary */}
-            <div
-              style={{
-                display: "grid",
-                gap: "0.75rem",
-                marginTop: "0.5rem",
-              }}
-            >
-              {results.map((result) => {
-                // Rekening tanpa nomor tetap punya hasil — kunci ke label supaya tidak bentrok.
-                const resultKey = result.accountNumber || result.label || "";
-                return (
-                <div
-                  key={resultKey}
-                  style={{
-                    border: `2px solid ${result.match ? "#22c55e" : "#ef4444"}`,
-                    borderRadius: "16px",
-                    padding: "1rem 1.2rem",
-                    background: result.match
-                      ? "rgba(34,197,94,.06)"
-                      : "rgba(239,68,68,.06)",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: "0.6rem",
-                    }}
-                  >
-                    <div>
-                      <strong style={{ fontSize: ".95rem" }}>
-                        {result.label || result.accountNumber}
-                      </strong>
-                      <small
-                        style={{
-                          display: "block",
-                          color: "var(--muted)",
-                          fontSize: ".75rem",
-                        }}
-                      >
-                        {result.accountNumber ? `Rek. ${result.accountNumber} · ` : ""}
-                        {result.transactionCount} transaksi tercatat
-                        {result.matchedByHolderOnlyCount
-                          ? ` · ${result.matchedByHolderOnlyCount} di antaranya tanpa nomor rekening, dicocokkan lewat nama`
-                          : ""}
-                      </small>
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.4rem",
-                        color: result.match ? "#22c55e" : "#ef4444",
-                        fontWeight: 700,
-                        fontSize: ".9rem",
-                      }}
-                    >
-                      {result.match ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
-                      {result.match ? "Cocok" : "Selisih"}
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr 1fr",
-                      gap: "0.75rem",
-                      fontSize: ".82rem",
-                    }}
-                  >
-                    <div>
-                      <small style={{ color: "var(--muted)" }}>Saldo Aktual</small>
-                      <strong>{rupiah.format(result.actualBalance)}</strong>
-                    </div>
-                    <div>
-                      <small style={{ color: "var(--muted)" }}>Saldo Sistem</small>
-                      <strong>{rupiah.format(result.calculatedBalance)}</strong>
-                    </div>
-                    <div>
-                      <small style={{ color: "var(--muted)" }}>Selisih</small>
-                      <strong
-                        style={{
-                          color: result.match ? "#22c55e" : "#ef4444",
-                        }}
-                      >
-                        {formatDiscrepancy(result.discrepancy)}
-                      </strong>
-                    </div>
-                  </div>
-
-                  {/* Show problematic transactions if mismatch */}
-                  {!result.match && result.transactions.length > 0 && (
-                    <div style={{ marginTop: "0.75rem" }}>
-                      <button
-                        onClick={() => toggleExpand(resultKey)}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          color: "#ef4444",
-                          fontWeight: 700,
-                          fontSize: ".82rem",
-                          cursor: "pointer",
-                          padding: 0,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "0.3rem",
-                        }}
-                      >
-                        <AlertTriangle size={14} />
-                        {expandedAccount === resultKey
-                          ? "Sembunyikan transaksi bermasalah"
-                          : `Lihat ${result.transactions.length} transaksi bermasalah`}
-                      </button>
-
-                      {expandedAccount === resultKey && (
-                        <div
-                          style={{
-                            marginTop: "0.5rem",
-                            display: "grid",
-                            gap: "0.4rem",
-                          }}
-                        >
-                          {result.transactions.map((txn) => (
-                            <div
-                              key={txn.id}
-                              style={{
-                                padding: "0.6rem 0.8rem",
-                                border: "1px solid var(--line)",
-                                borderRadius: "12px",
-                                background: "rgba(239,68,68,.03)",
-                                fontSize: ".78rem",
-                              }}
-                            >
-                              <div
-                                style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  alignItems: "center",
-                                }}
-                              >
-                                <span>
-                                  {new Date(txn.date).toLocaleDateString("id-ID", {
-                                    day: "2-digit",
-                                    month: "short",
-                                    year: "numeric",
-                                  })}
-                                </span>
-                                <span
-                                  style={{
-                                    fontWeight: 700,
-                                    color:
-                                      txn.direction === "IN"
-                                        ? "#22c55e"
-                                        : "#ef4444",
-                                  }}
-                                >
-                                  {txn.direction === "IN" ? "+" : "-"}
-                                  {rupiah.format(txn.amount)}
-                                </span>
-                              </div>
-                              <div
-                                style={{
-                                  color: "var(--muted)",
-                                  marginTop: "0.2rem",
-                                }}
-                              >
-                                {txn.description}
-                              </div>
-                              <div
-                                style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  marginTop: "0.2rem",
-                                  fontSize: ".72rem",
-                                }}
-                              >
-                                <span
-                                  style={{
-                                    background: "rgba(239,68,68,.1)",
-                                    color: "#ef4444",
-                                    padding: "0.1rem 0.4rem",
-                                    borderRadius: "6px",
-                                    fontWeight: 600,
-                                  }}
-                                >
-                                  {txn.reason}
-                                </span>
-                                <span style={{ color: "var(--muted)" }}>
-                                  {txn.status}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-                );
-              })}
+                Cek ulang
+              </button>
+              <button className="button button-primary" type="button" onClick={onClose}>
+                <Check /> Tutup
+              </button>
             </div>
-
-            {unclaimed && unclaimed.count > 0 && (
-              <div
-                style={{
-                  marginTop: "0.75rem",
-                  border: "2px solid #f59e0b",
-                  borderRadius: "16px",
-                  padding: "1rem 1.2rem",
-                  background: "rgba(245,158,11,.06)",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontWeight: 700, fontSize: ".9rem", color: "#b45309" }}>
-                  <AlertTriangle size={18} />
-                  {unclaimed.count} transaksi tidak terkait rekening mana pun
-                </div>
-                <p style={{ margin: "0.4rem 0 0", color: "var(--muted)", fontSize: ".78rem" }}>
-                  Neto {rupiah.format(unclaimed.netAmount)}. Transaksi ini ikut menggerakkan saldo tetapi
-                  nama pemilik maupun nomor rekeningnya tidak cocok dengan rekening yang dipantau — ini
-                  penyebab selisih yang paling sering tidak bisa dijelaskan.
-                </p>
-                {unclaimed.samples.length > 0 && (
-                  <div style={{ display: "grid", gap: "0.3rem", marginTop: "0.5rem" }}>
-                    {unclaimed.samples.map((txn) => (
-                      <div key={txn.id} style={{ fontSize: ".75rem", color: "var(--muted)", display: "flex", justifyContent: "space-between", gap: "0.6rem" }}>
-                        <span>{txn.accountHolder || "Nama pemilik belum terbaca"} · {txn.description}</span>
-                        <strong style={{ whiteSpace: "nowrap", color: txn.direction === "IN" ? "#22c55e" : "#ef4444" }}>
-                          {txn.direction === "IN" ? "+" : "-"}{rupiah.format(txn.amount)}
-                        </strong>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <button
-              className="button button-wide"
-              onClick={() => {
-                setResults(null);
-                setExpandedAccount(null);
-                setSkippedLabels([]);
-                setUnclaimed(null);
-              }}
-            >
-              Cek Ulang
-            </button>
-
-            <button className="button button-primary button-wide" onClick={onClose}>
-              <Check /> Tutup
-            </button>
-          </>
-        )}
+          )}
+        </footer>
       </div>
     </div>
   );

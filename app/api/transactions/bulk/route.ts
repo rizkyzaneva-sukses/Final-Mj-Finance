@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { recalculateBatchStats } from "@/lib/matching";
+import {
+  forceUniqueFingerprint,
+  isExactDuplicateSkipReason,
+  recalculateBatchStats,
+} from "@/lib/matching";
 
 type BulkBody = {
   ids?: string[];
-  action?: "assign" | "skip" | "reopen";
+  action?: "assign" | "skip" | "reopen" | "forceUnique";
   ministryId?: string;
   eventId?: string;
   incomeTypeId?: string;
@@ -44,15 +48,70 @@ export async function POST(request: Request) {
   }
 
   if (body.action === "reopen") {
-    await db.transaction.updateMany({
+    // Exact-duplikat punya fingerprint di-salt; reopen biasa cukup untuk fuzzy skip.
+    // Exact harus lewat forceUnique agar fingerprint diganti dan lolos @unique di buku.
+    const rows = await db.transaction.findMany({
       where: { id: { in: ids } },
-      data: {
-        status: "UNMATCHED",
-        skipReason: null,
-      },
+      select: { id: true, skipReason: true },
     });
+    const exactIds = rows.filter((row) => isExactDuplicateSkipReason(row.skipReason)).map((row) => row.id);
+    const otherIds = rows.filter((row) => !isExactDuplicateSkipReason(row.skipReason)).map((row) => row.id);
+
+    if (otherIds.length) {
+      await db.transaction.updateMany({
+        where: { id: { in: otherIds } },
+        data: {
+          status: "UNMATCHED",
+          skipReason: null,
+        },
+      });
+    }
+
+    // Exact: ganti fingerprint dulu, baru buka ke UNMATCHED (satu per satu karena hash unik).
+    for (const id of exactIds) {
+      const base = `force-unique-${id}`;
+      await db.transaction.update({
+        where: { id },
+        data: {
+          fingerprint: forceUniqueFingerprint(base),
+          status: "UNMATCHED",
+          skipReason: null,
+          assignedByRole: session.role,
+          assignedAt: new Date(),
+        },
+      });
+    }
+
     await Promise.all(batchIds.map(recalculateBatchStats));
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, forcedUnique: exactIds.length, reopened: otherIds.length });
+  }
+
+  if (body.action === "forceUnique") {
+    const rows = await db.transaction.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, skipReason: true },
+    });
+    const exactIds = rows.filter((row) => isExactDuplicateSkipReason(row.skipReason)).map((row) => row.id);
+    if (!exactIds.length) {
+      return NextResponse.json(
+        { error: "Hanya baris dengan status duplikat exact yang bisa dipaksa unik." },
+        { status: 400 },
+      );
+    }
+    for (const id of exactIds) {
+      await db.transaction.update({
+        where: { id },
+        data: {
+          fingerprint: forceUniqueFingerprint(id),
+          status: "UNMATCHED",
+          skipReason: null,
+          assignedByRole: session.role,
+          assignedAt: new Date(),
+        },
+      });
+    }
+    await Promise.all(batchIds.map(recalculateBatchStats));
+    return NextResponse.json({ ok: true, forcedUnique: exactIds.length });
   }
 
   if (body.action !== "assign") return NextResponse.json({ error: "Aksi tidak valid." }, { status: 400 });
