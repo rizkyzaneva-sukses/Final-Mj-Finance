@@ -61,9 +61,8 @@ export async function parseBankFile(buffer: Buffer, mimeType: string): Promise<{
     throw new Error("MIMO_BASE_URL masih memakai endpoint Token Plan. Gunakan https://api.xiaomimimo.com/v1 untuk backend aplikasi.");
   }
   const model = (envValue("MIMO_MODEL") || "mimo-v2.5").toLowerCase();
-  if (mimeType !== "application/pdf" && model !== "mimo-v2.5") {
-    throw new Error("Impor screenshot memerlukan model mimo-v2.5 yang mendukung gambar.");
-  }
+  const visionModel = (envValue("MIMO_VISION_MODEL") || "mimo-v2.5").toLowerCase();
+  const effectiveModel = mimeType === "application/pdf" ? model : visionModel;
 
   const instruction = `Anda adalah parser mutasi rekening BCA Indonesia. Sumber bisa berupa PDF e-statement resmi ATAU screenshot aplikasi BCA mobile (menu "Mutasi"). Ekstrak nama pemilik rekening, nomor rekening, dan setiap transaksi tanpa saldo awal/akhir. Kembalikan JSON murni berbentuk {"accountHolder":"Nama Pemilik atau null","accountNumber":"Nomor rekening atau null","transactions":[{"date":"YYYY-MM-DD","description":"teks lengkap","amount":100000,"direction":"IN|OUT","reference":null}]}. Tanda (+), CR, atau kredit berarti IN; tanda (-)/(−), DB, atau debit berarti OUT. Nominal adalah angka rupiah tanpa pemisah. PENTING soal tanggal: pada screenshot aplikasi BCA mobile, setiap baris transaksi hanya menampilkan tanggal dan bulan singkat tanpa tahun (contoh "17 Jul"). Tahun WAJIB diambil dari field "Periode" di bagian atas layar (contoh "Periode : 08 Jul 2026 - 17 Jul 2026" berarti tahun 2026); jika periode melewati pergantian tahun, cocokkan bulan transaksi ke tahun yang sesuai dalam rentang periode tersebut. Jangan pernah melewatkan baris transaksi hanya karena tahunnya tidak tertulis eksplisit pada baris itu sendiri — selalu lengkapi dari "Periode". Pertahankan deskripsi TRF BATCH MYBB - PEMBAYARAN secara utuh. Jangan sertakan baris saldo awal, saldo akhir, ringkasan, atau header tabel sebagai transaksi. Jika sebuah baris transaksi tidak bisa dibaca lengkap (deskripsi, nominal, dan arah IN/OUT wajib semuanya terisi), lewati baris itu sepenuhnya alih-alih mengisi null.`;
   const content: Array<Record<string, unknown>> = [{ type: "text", text: instruction }];
@@ -85,7 +84,7 @@ export async function parseBankFile(buffer: Buffer, mimeType: string): Promise<{
     method: "POST",
     headers: { "api-key": apiKey, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model,
+      model: effectiveModel,
       temperature: 0,
       response_format: { type: "json_object" },
       messages: [{ role: "user", content }],
