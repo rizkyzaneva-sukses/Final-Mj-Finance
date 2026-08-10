@@ -30,7 +30,7 @@ type ExpenseType = { id: string; name: string; active: boolean };
 // Saat halaman induk belum mengirimkannya, nominal diperlakukan sebagai positif (perilaku lama).
 type OpeningBalance = { id: string; accountHolder: string; accountNumber: string | null; amount: number; direction?: "IN" | "OUT"; transactionDate: string; note: string | null };
 
-type Tab = "ministry" | "event" | "incomeMapping" | "incomeMaster" | "expenseType";
+type Tab = "ministry" | "event" | "incomeMapping" | "incomeMaster" | "expenseType" | "openingBalance";
 
 type MappingRow =
   | {
@@ -465,13 +465,15 @@ export function MasterManager({
 
   return <div className="master-layout">
     <section className="panel master-form-panel">
-      <div className="master-tabs master-tabs-five">
+      <div className="master-tabs master-tabs-six">
         <button className={tab === "ministry" ? "selected" : ""} onClick={() => { setTab("ministry"); setForm({}); }}><Building2 /> Kementerian</button>
         <button className={tab === "event" ? "selected" : ""} onClick={() => { setTab("event"); setForm({}); }}><CalendarDays /> Event</button>
         <button className={tab === "incomeMaster" ? "selected" : ""} onClick={() => { setTab("incomeMaster"); setForm({}); }}><WalletCards /> Master pemasukan</button>
         <button className={tab === "incomeMapping" ? "selected" : ""} onClick={() => { setTab("incomeMapping"); setForm({}); }}><CircleDollarSign /> Mapping event</button>
         <button className={tab === "expenseType" ? "selected" : ""} onClick={() => { setTab("expenseType"); setForm({}); }}><ReceiptText /> Pengeluaran</button>
+        <button className={tab === "openingBalance" ? "selected" : ""} onClick={() => { setTab("openingBalance"); setOpeningForm({}); setOpeningError(""); }}><WalletCards /> Saldo awal</button>
       </div>
+      {tab !== "openingBalance" && (
       <form className="master-form" onSubmit={submit}>
         <div>
           <span className="eyebrow">TAMBAH BARU</span>
@@ -502,6 +504,24 @@ export function MasterManager({
         {error && <div className="form-error">{error}</div>}
         <button className="button button-primary button-wide" disabled={loading}>{loading ? <LoaderCircle className="spin" /> : <Plus />} Tambahkan</button>
       </form>
+      )}
+      {tab === "openingBalance" && (
+      <form className="master-form account-setup-form" onSubmit={submitOpeningBalance}>
+        <div>
+          <span className="eyebrow">POSISI AWAL UANG</span>
+          <h2>Saldo awal rekening</h2>
+        </div>
+        <p className="master-form-hint">Dipakai untuk menghitung sisa uang saat ini. Tidak masuk ke mapping event dan tidak mengganggu impor mutasi/QRIS. Nominal muncul di Dashboard per rekening.</p>
+        <label>Nama pemilik rekening<input value={openingForm.accountHolder || ""} onChange={(e) => setOpeningForm({ ...openingForm, accountHolder: e.target.value })} placeholder="Muhammad Rizky / Sugiarsa" required /></label>
+        <label>Nomor rekening (opsional)<input inputMode="numeric" value={openingForm.accountNumber || ""} onChange={(e) => setOpeningForm({ ...openingForm, accountNumber: e.target.value.replace(/\D/g, "") })} placeholder="Contoh: 0590040242" /></label>
+        <label>Tanggal saldo awal<input type="date" value={openingForm.transactionDate || ""} onChange={(e) => setOpeningForm({ ...openingForm, transactionDate: e.target.value })} required /></label>
+        <label>Nominal saldo awal<input inputMode="text" value={openingForm.amount || ""} onChange={(e) => setOpeningForm({ ...openingForm, amount: sanitizeAmountInput(e.target.value) })} placeholder="Contoh: 1.500.000 atau -250.000" required /><AmountPreview raw={openingForm.amount || ""} /></label>
+        <label>Catatan (opsional)<input value={openingForm.note || ""} onChange={(e) => setOpeningForm({ ...openingForm, note: e.target.value })} placeholder="Saldo per tanggal awal pencatatan" /></label>
+        {openingError && <div className="form-error">{openingError}</div>}
+        <button className="button button-primary button-wide" disabled={openingLoading}>{openingLoading ? <LoaderCircle className="spin" /> : <Plus />} Simpan saldo awal</button>
+      </form>
+      )}
+      {tab !== "openingBalance" && (
       <div className="reset-box">
         <div className="reset-box-header">
           <span className="reset-icon"><AlertTriangle size={16} /></span>
@@ -519,22 +539,7 @@ export function MasterManager({
           Reset semua data
         </button>
       </div>
-      <form className="account-setup-box" onSubmit={submitOpeningBalance}>
-        <div className="reset-box-header">
-          <span className="reset-icon"><WalletCards size={16} /></span>
-          <div>
-            <strong>Saldo awal rekening</strong>
-            <small>Dipakai untuk menghitung sisa uang saat ini. Tidak masuk ke mapping event dan tidak mengganggu impor mutasi/QRIS.</small>
-          </div>
-        </div>
-        <label>Nama pemilik rekening<input value={openingForm.accountHolder || ""} onChange={(e) => setOpeningForm({ ...openingForm, accountHolder: e.target.value })} placeholder="Muhammad Rizky / Sugiarsa" required /></label>
-        <label>Nomor rekening (opsional)<input inputMode="numeric" value={openingForm.accountNumber || ""} onChange={(e) => setOpeningForm({ ...openingForm, accountNumber: e.target.value.replace(/\D/g, "") })} placeholder="Contoh: 0590040242" /></label>
-        <label>Tanggal saldo awal<input type="date" value={openingForm.transactionDate || ""} onChange={(e) => setOpeningForm({ ...openingForm, transactionDate: e.target.value })} required /></label>
-        <label>Nominal saldo awal<input inputMode="text" value={openingForm.amount || ""} onChange={(e) => setOpeningForm({ ...openingForm, amount: sanitizeAmountInput(e.target.value) })} placeholder="Contoh: 1.500.000 atau -250.000" required /><AmountPreview raw={openingForm.amount || ""} /></label>
-        <label>Catatan (opsional)<input value={openingForm.note || ""} onChange={(e) => setOpeningForm({ ...openingForm, note: e.target.value })} placeholder="Saldo per tanggal awal pencatatan" /></label>
-        {openingError && <div className="form-error">{openingError}</div>}
-        <button className="button button-primary button-wide" disabled={openingLoading}>{openingLoading ? <LoaderCircle className="spin" /> : <Plus />} Simpan saldo awal</button>
-      </form>
+      )}
     </section>
 
     <section className="panel master-list-panel table-panel">

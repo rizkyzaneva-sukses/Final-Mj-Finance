@@ -76,6 +76,10 @@ export default async function MeetingSheetPage({ searchParams }: { searchParams:
                   </div>
                   <div className="meeting-sheet-account-values">
                     <div>
+                      <small>Saldo awal</small>
+                      <b>{rupiah.format(account.openingBalance)}</b>
+                    </div>
+                    <div>
                       <small>Saldo terkonfirmasi</small>
                       <b>{rupiah.format(account.confirmedBalance)}</b>
                     </div>

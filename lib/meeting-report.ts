@@ -18,6 +18,10 @@ export type MeetingAccountRow = {
   label: string;
   accountNumber: string | null;
   usesQrisEstimate: boolean;
+  /** Saldo awal rekening (bisa negatif). 0 jika belum ditetapkan. */
+  openingBalance: number;
+  /** Tanggal saldo awal terbaru untuk rekening ini, null jika belum ada. */
+  openingBalanceAt: Date | null;
   confirmedBalance: number;
   qrisEstimateGross: number;
   qrisEstimateFee: number;
@@ -171,10 +175,19 @@ export async function getBalanceEstimateSummary(endDate: Date) {
   const accountRows: MeetingAccountRow[] = TRACKED_ACCOUNTS.map((account) => {
     const relevant = balanceByLabel.get(account.label) ?? [];
     const bankRows = relevant.filter((row) => BANK_SOURCES.includes(row.source as BankSourceKey));
+    // balanceSourceWhere() hanya mengizinkan MANUAL untuk baris saldo awal, jadi filter source cukup.
+    const openingRows = relevant.filter((row) => row.source === "MANUAL");
 
     const income = sumBy(relevant, "IN");
     const expense = sumBy(relevant, "OUT");
     const confirmedBalance = income - expense;
+    const openingIncome = sumBy(openingRows, "IN");
+    const openingExpense = sumBy(openingRows, "OUT");
+    const openingBalance = roundMoney(openingIncome - openingExpense);
+    const openingBalanceAt = openingRows.reduce<Date | null>(
+      (latest, row) => (!latest || row.transactionDate > latest ? row.transactionDate : latest),
+      null,
+    );
 
     const bySource = BANK_SOURCES.reduce((acc, source) => {
       const rows = bankRows.filter((row) => row.source === source);
@@ -229,6 +242,8 @@ export async function getBalanceEstimateSummary(endDate: Date) {
       label: account.label,
       accountNumber,
       usesQrisEstimate: account.usesQrisEstimate,
+      openingBalance,
+      openingBalanceAt,
       confirmedBalance: roundMoney(confirmedBalance),
       qrisEstimateGross: roundMoney(qrisEstimateGross),
       qrisEstimateFee,
@@ -259,6 +274,7 @@ export async function getBalanceEstimateSummary(endDate: Date) {
   const confirmedTotal = roundMoney(
     accountRows.reduce((sum, row) => sum + row.confirmedBalance, 0) + (unclaimed?.net ?? 0),
   );
+  const openingTotal = roundMoney(accountRows.reduce((sum, row) => sum + row.openingBalance, 0));
   const qrisPendingGross = roundMoney(accountRows.reduce((sum, row) => sum + row.qrisEstimateGross, 0));
   const qrisPendingFee = roundMoney(accountRows.reduce((sum, row) => sum + row.qrisEstimateFee, 0));
   const qrisPendingNet = roundMoney(accountRows.reduce((sum, row) => sum + row.qrisEstimateNet, 0));
@@ -268,6 +284,7 @@ export async function getBalanceEstimateSummary(endDate: Date) {
     accountRows,
     unclaimed,
     confirmedTotal,
+    openingTotal,
     qrisPendingGross,
     qrisPendingFee,
     qrisPendingNet,

@@ -219,6 +219,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Para
               <h3>{account.label}</h3>
               <div className="meeting-account-values">
                 <div>
+                  <small>Saldo awal</small>
+                  <strong>{rupiah.format(account.openingBalance)}</strong>
+                </div>
+                <div>
                   <small>Terkonfirmasi</small>
                   <strong>{rupiah.format(account.confirmedBalance)}</strong>
                 </div>

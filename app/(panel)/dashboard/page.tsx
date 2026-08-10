@@ -271,9 +271,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
 
       <section className="meeting-metrics-grid dashboard-balance-summary">
         <article className="meeting-metric-card">
+          <span>Saldo awal</span>
+          <strong>{rupiah.format(balanceSummary.openingTotal)}</strong>
+          <small>Posisi awal semua rekening · atur di Master Data</small>
+        </article>
+        <article className="meeting-metric-card">
           <span>Saldo terkonfirmasi</span>
           <strong>{rupiah.format(balanceSummary.confirmedTotal)}</strong>
-          <small>Mutasi bank + saldo awal</small>
+          <small>Saldo awal + mutasi bank</small>
         </article>
         <article className="meeting-metric-card">
           <span>Estimasi QRIS belum cair</span>
@@ -293,6 +298,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             <div className="eyebrow">SALDO REKENING</div>
             <h3>{account.label}</h3>
             <div className="meeting-account-values">
+              <div>
+                <small>Saldo awal</small>
+                <strong>{rupiah.format(account.openingBalance)}</strong>
+                <small style={{ marginTop: "0.2rem", opacity: 0.85 }}>
+                  {account.openingBalanceAt
+                    ? `Per ${dateId.format(account.openingBalanceAt)}`
+                    : "Belum ditetapkan"}
+                </small>
+              </div>
               <div>
                 <small>Terkonfirmasi</small>
                 <strong>{rupiah.format(account.confirmedBalance)}</strong>
@@ -327,6 +341,21 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             <article className="source-summary-card" key={account.label}>
               <h3>{account.label}</h3>
               <div className="source-summary-rows">
+                <div className="source-summary-row">
+                  <div className="source-summary-label">
+                    <span>Saldo awal</span>
+                  </div>
+                  <div className="source-summary-values">
+                    <div>
+                      <small>Nominal</small>
+                      <strong>{rupiah.format(account.openingBalance)}</strong>
+                    </div>
+                    <div>
+                      <small>Tanggal</small>
+                      <strong>{account.openingBalanceAt ? dateId.format(account.openingBalanceAt) : "—"}</strong>
+                    </div>
+                  </div>
+                </div>
                 {SOURCE_META.map((meta) => {
                   const data = account.bySource[meta.key];
                   return (
@@ -347,7 +376,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             </article>
           ))}
         </div>
-        <p className="table-panel-note">Dihitung dari basis yang sama persis dengan kartu &quot;Saldo rekening&quot; di atas: seluruh mutasi bank tanpa pandang status (termasuk yang belum di-assign dan pencairan QRIS gabungan). Jumlah neto PDF + Screenshot per rekening karena itu selalu cocok dengan saldo terkonfirmasi rekening tersebut, dikurangi saldo awal yang bukan mutasi bank.</p>
+        <p className="table-panel-note">Saldo terkonfirmasi = saldo awal + neto mutasi PDF + neto mutasi Screenshot. Saldo awal diisi di Master Data dan bukan mutasi bank.</p>
       </section>
 
       <section className="panel table-panel">
