@@ -4,7 +4,7 @@ import { PageHeading } from "@/components/page-heading";
 import { MensosFilters } from "@/components/mensos-filters";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { compactRupiah, periodBounds, rupiah } from "@/lib/format";
+import { compactRupiah, dateId, periodBounds, rupiah } from "@/lib/format";
 import { excludeOpeningBalanceWhere } from "@/lib/accounts";
 import { qrisFeeFor, roundMoney } from "@/lib/money";
 
@@ -40,6 +40,7 @@ export default async function MensosDashboard({ searchParams }: { searchParams: 
   const [
     allTimeTransactions,
     periodTransactions,
+    periodTxDetail,
     events,
   ] = await Promise.all([
     db.transaction.findMany({
@@ -61,6 +62,17 @@ export default async function MensosDashboard({ searchParams }: { searchParams: 
       },
       include: { incomeType: true, expenseType: true },
     }),
+    db.transaction.findMany({
+      where: {
+        isDraft: false,
+        status: "MATCHED",
+        ministryId: mensos.id,
+        transactionDate: { gte: startDate, lte: endDate },
+        ...excludeOpeningBalanceWhere(),
+      },
+      include: { incomeType: true, expenseType: true, event: true },
+      orderBy: [{ transactionDate: "asc" }, { createdAt: "asc" }],
+    }),
     db.event.findMany({
       where: { ministryId: mensos.id, active: true },
       orderBy: { name: "asc" },
@@ -77,7 +89,7 @@ export default async function MensosDashboard({ searchParams }: { searchParams: 
   const periodIncome = roundMoney(periodTransactions.filter((t) => t.direction === "IN").reduce((sum, t) => sum + Number(t.amount), 0));
   const periodExpense = roundMoney(periodTransactions.filter((t) => t.direction === "OUT").reduce((sum, t) => sum + Number(t.amount), 0));
   const periodQrisFee = roundMoney(periodTransactions.filter((t) => t.direction === "IN" && t.source === "QRIS_XLSX").reduce((sum, t) => sum + qrisFeeFor(Number(t.amount)), 0));
-  const saldoDialokasikan = roundMoney(periodIncome - periodQrisFee - periodExpense);
+  const saldoDialokasikan = periodExpense;
 
   const eventRows = events.map((event) => {
     const eventTx = periodTransactions.filter((t) => t.eventId === event.id);
@@ -103,6 +115,8 @@ export default async function MensosDashboard({ searchParams }: { searchParams: 
       }
     }
 
+    const detailTx = periodTxDetail.filter((t) => t.eventId === event.id);
+
     return {
       id: event.id,
       name: event.name,
@@ -114,6 +128,16 @@ export default async function MensosDashboard({ searchParams }: { searchParams: 
       incomeRows: [...incomeByType.values()].map((r) => ({ ...r, amount: roundMoney(r.amount) })).sort((a, b) => b.amount - a.amount),
       expenseRows: [...expenseByType.values()].map((r) => ({ ...r, amount: roundMoney(r.amount) })).sort((a, b) => b.amount - a.amount),
       transactionCount: eventTx.length,
+      transactions: detailTx.map((t) => ({
+        id: t.id,
+        date: t.transactionDate,
+        description: t.description,
+        direction: t.direction as "IN" | "OUT",
+        amount: Number(t.amount),
+        source: t.source,
+        incomeTypeName: t.incomeType?.name || null,
+        expenseTypeName: t.expenseType?.name || null,
+      })),
     };
   }).filter((row) => row.income || row.expense || row.transactionCount > 0);
 
@@ -130,6 +154,8 @@ export default async function MensosDashboard({ searchParams }: { searchParams: 
   const nonEventExpense = roundMoney(nonEventPeriod.filter((t) => t.direction === "OUT").reduce((sum, t) => sum + Number(t.amount), 0));
   const nonEventQrisFee = roundMoney(nonEventPeriod.filter((t) => t.direction === "IN" && t.source === "QRIS_XLSX").reduce((sum, t) => sum + qrisFeeFor(Number(t.amount)), 0));
   const hasNonEvent = nonEventIncome || nonEventExpense;
+
+  const nonEventDetailTx = periodTxDetail.filter((t) => !t.eventId);
 
   return (
     <div className="page-stack">
@@ -155,11 +181,11 @@ export default async function MensosDashboard({ searchParams }: { searchParams: 
           <strong>{compactRupiah.format(saldoMasuk)}</strong>
           <small>Total pemasukan kumulatif Kementerian Sosial</small>
         </article>
-        <article className="stat-card stat-income">
+        <article className="stat-card stat-expense">
           <div className="stat-icon"><ArrowUpRight /></div>
           <span>Saldo Dialokasikan</span>
           <strong>{compactRupiah.format(saldoDialokasikan)}</strong>
-          <small>Neto periode terpilih · pemasukan dikurangi fee QRIS & pengeluaran</small>
+          <small>Total pengeluaran periode terpilih</small>
         </article>
       </section>
 
@@ -181,7 +207,7 @@ export default async function MensosDashboard({ searchParams }: { searchParams: 
         </article>
         <article className="meeting-metric-card">
           <span>Arus bersih periode</span>
-          <strong className={saldoDialokasikan < 0 ? "money-out" : "money-in"}>{rupiah.format(saldoDialokasikan)}</strong>
+          <strong className={roundMoney(periodIncome - periodQrisFee - periodExpense) < 0 ? "money-out" : "money-in"}>{rupiah.format(roundMoney(periodIncome - periodQrisFee - periodExpense))}</strong>
           <small>Pemasukan - fee - pengeluaran</small>
         </article>
       </section>
@@ -234,7 +260,7 @@ export default async function MensosDashboard({ searchParams }: { searchParams: 
                   <td className="money-in"><strong>{rupiah.format(periodIncome)}</strong></td>
                   <td className="money-fee"><strong>{rupiah.format(periodQrisFee)}</strong></td>
                   <td className="money-out"><strong>{rupiah.format(periodExpense)}</strong></td>
-                  <td><strong className={saldoDialokasikan < 0 ? "money-out" : "money-in"}>{rupiah.format(saldoDialokasikan)}</strong></td>
+                  <td><strong className={roundMoney(periodIncome - periodQrisFee - periodExpense) < 0 ? "money-out" : "money-in"}>{rupiah.format(roundMoney(periodIncome - periodQrisFee - periodExpense))}</strong></td>
                 </tr>
               </tfoot>
             </table>
@@ -277,7 +303,7 @@ export default async function MensosDashboard({ searchParams }: { searchParams: 
             </table>
           </div>
           {event.expenseRows.length > 0 && (
-            <div className="responsive-table">
+            <div className="responsive-table" style={{ marginBottom: "1rem" }}>
               <table className="report-table responsive-report-table">
                 <thead>
                   <tr>
@@ -296,8 +322,70 @@ export default async function MensosDashboard({ searchParams }: { searchParams: 
               </table>
             </div>
           )}
+          {event.transactions.length > 0 && (
+            <div className="responsive-table">
+              <table className="report-table responsive-report-table">
+                <thead>
+                  <tr>
+                    <th>Tanggal</th>
+                    <th>Keterangan</th>
+                    <th>Jenis</th>
+                    <th>Arah</th>
+                    <th>Jumlah</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {event.transactions.map((t) => (
+                    <tr key={t.id}>
+                      <td data-label="Tanggal">{dateId.format(t.date)}</td>
+                      <td data-label="Keterangan">{t.description}</td>
+                      <td data-label="Jenis">{t.direction === "IN" ? (t.incomeTypeName || "—") : (t.expenseTypeName || "—")}</td>
+                      <td data-label="Arah"><span className={t.direction === "IN" ? "money-in" : "money-out"}>{t.direction === "IN" ? "Masuk" : "Keluar"}</span></td>
+                      <td data-label="Jumlah" className={t.direction === "IN" ? "money-in" : "money-out"}>{t.direction === "IN" ? "+" : "-"}{rupiah.format(t.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       ))}
+
+      {hasNonEvent && nonEventDetailTx.length > 0 && (
+        <section className="panel table-panel">
+          <div className="panel-title">
+            <div>
+              <span className="eyebrow">RINCIAN</span>
+              <h2>Transaksi tanpa kegiatan</h2>
+            </div>
+            <span className={`ministry-code ${roundMoney(nonEventIncome - nonEventQrisFee - nonEventExpense) < 0 ? "money-out" : "money-in"}`}>
+              Net: {rupiah.format(roundMoney(nonEventIncome - nonEventQrisFee - nonEventExpense))}
+            </span>
+          </div>
+          <div className="responsive-table">
+            <table className="report-table responsive-report-table">
+              <thead>
+                <tr>
+                  <th>Tanggal</th>
+                  <th>Keterangan</th>
+                  <th>Arah</th>
+                  <th>Jumlah</th>
+                </tr>
+              </thead>
+              <tbody>
+                {nonEventDetailTx.map((t) => (
+                  <tr key={t.id}>
+                    <td data-label="Tanggal">{dateId.format(t.transactionDate)}</td>
+                    <td data-label="Keterangan">{t.description}</td>
+                    <td data-label="Arah"><span className={t.direction === "IN" ? "money-in" : "money-out"}>{t.direction === "IN" ? "Masuk" : "Keluar"}</span></td>
+                    <td data-label="Jumlah" className={t.direction === "IN" ? "money-in" : "money-out"}>{t.direction === "IN" ? "+" : "-"}{rupiah.format(Number(t.amount))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {eventAllTimeRows.length > 0 && (
         <section className="panel table-panel">
