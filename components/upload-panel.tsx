@@ -6,6 +6,11 @@ import { ArchiveRestore, FileSpreadsheet, ImagePlus, LoaderCircle, UploadCloud, 
 
 type UploadKind = "QRIS" | "BANK" | "HISTORICAL";
 
+const BANK_ACCOUNTS = [
+  { holder: "MUHAMMAD RIZKY MAULANA", number: "0770015477", label: "Muhammad Rizky" },
+  { holder: "MUHAMMAD FIRDAUS SUGIARSA", number: "0590040242", label: "Sugiarsa" },
+] as const;
+
 function isImageFile(file: File) {
   return file.type.startsWith("image/") || /\.(jpg|jpeg|png|webp)$/i.test(file.name);
 }
@@ -33,6 +38,7 @@ export function UploadPanel({ canImportHistorical = false }: { canImportHistoric
   const [replaceExisting, setReplaceExisting] = useState(false);
   const [qrisAccountHolder, setQrisAccountHolder] = useState("");
   const [qrisAccountNumber, setQrisAccountNumber] = useState("");
+  const [bankAccountIdx, setBankAccountIdx] = useState<number>(-1);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: "ok" | "error"; text: string } | null>(null);
 
@@ -40,6 +46,7 @@ export function UploadPanel({ canImportHistorical = false }: { canImportHistoric
     setKind(next);
     setFiles([]);
     setReplaceExisting(false);
+    setBankAccountIdx(-1);
     setMessage(null);
     if (inputRef.current) inputRef.current.value = "";
   }
@@ -69,6 +76,10 @@ export function UploadPanel({ canImportHistorical = false }: { canImportHistoric
         data.set("replaceExisting", String(replaceExisting));
         data.set("qrisAccountHolder", qrisAccountHolder);
         data.set("qrisAccountNumber", qrisAccountNumber);
+      }
+      if (kind === "BANK" && bankAccountIdx >= 0) {
+        data.set("bankAccountHolder", BANK_ACCOUNTS[bankAccountIdx].holder);
+        data.set("bankAccountNumber", BANK_ACCOUNTS[bankAccountIdx].number);
       }
       const response = await fetch("/api/imports", { method: "POST", body: data });
       let payload: { error?: string; batchId?: string } = {};
@@ -133,7 +144,18 @@ export function UploadPanel({ canImportHistorical = false }: { canImportHistoric
           <button type="button" className="icon-button" title="Hapus dari daftar" onClick={(event) => { event.stopPropagation(); removeFile(index); }}><X size={14} /></button>
         </li>)}
       </ul>}
-      {kind === "BANK" && <div className="info-strip"><b>Catatan cerdas</b><span>Baris "TRF BATCH MYBB - PEMBAYARAN" otomatis dilewati agar QRIS tidak dihitung dua kali. Unggah beberapa screenshot mutasi rekening yang sama sekaligus — jangan campur rekening berbeda dalam satu kali unggah.</span></div>}
+      {kind === "BANK" && <div className="historical-account-fields" style={{ marginTop: "0.75rem" }}>
+        <label>Rekening tujuan (wajib)
+          <select value={bankAccountIdx} onChange={(e) => setBankAccountIdx(Number(e.target.value))}>
+            <option value={-1}>— Pilih rekening —</option>
+            {BANK_ACCOUNTS.map((acc, i) => (
+              <option key={acc.number} value={i}>{acc.label} · {acc.number}</option>
+            ))}
+          </select>
+        </label>
+        <small style={{ opacity: 0.6 }}>Semua file yang diunggah akan ditugaskan ke rekening ini.</small>
+      </div>}
+      {kind === "BANK" && <div className="info-strip"><b>Catatan cerdas</b><span>Baris &ldquo;TRF BATCH MYBB - PEMBAYARAN&rdquo; otomatis dilewati agar QRIS tidak dihitung dua kali. Unggah beberapa screenshot mutasi rekening yang sama sekaligus &mdash; jangan campur rekening berbeda dalam satu kali unggah.</span></div>}
       {kind === "HISTORICAL" && <div className="historical-options">
         <div className="historical-copy"><b>Impor aman lewat preview</b><span>Mapping pada workbook FINAL diterapkan langsung. Baris yang belum lengkap tetap masuk ke “Perlu ditinjau”. Sheet APPS_Belum_Terhubung tidak ikut diimpor.</span></div>
         <div className="historical-account-fields">
@@ -143,7 +165,7 @@ export function UploadPanel({ canImportHistorical = false }: { canImportHistoric
         <label className="historical-replace"><input type="checkbox" checked={replaceExisting} onChange={(event) => setReplaceExisting(event.target.checked)} /><span><b>Bersihkan transaksi lama sebelum upload ini</b><small>Hanya transaksi dan riwayat impor yang dihapus. Kementerian, event, dan master tetap aman. Centang hanya pada file FINAL pertama.</small></span></label>
       </div>}
       {message && <div className={`notice notice-${message.type}`}>{message.text}</div>}
-      <button className="button button-primary upload-button" disabled={!files.length || loading} onClick={upload}>{loading ? <><LoaderCircle className="spin" size={18} /> Sedang membaca{files.length > 1 ? ` ${files.length} file...` : "..."}</> : <><UploadCloud size={18} /> {kind === "HISTORICAL" ? "Upload ke preview" : "Impor dan cocokkan"}</>}</button>
+      <button className="button button-primary upload-button" disabled={!files.length || loading || (kind === "BANK" && bankAccountIdx < 0)} onClick={upload}>{loading ? <><LoaderCircle className="spin" size={18} /> Sedang membaca{files.length > 1 ? ` ${files.length} file...` : "..."}</> : <><UploadCloud size={18} /> {kind === "HISTORICAL" ? "Upload ke preview" : "Impor dan cocokkan"}</>}</button>
     </section>
   );
 }

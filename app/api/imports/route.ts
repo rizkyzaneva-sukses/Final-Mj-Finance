@@ -66,6 +66,11 @@ export async function POST(request: Request) {
       const buffer = Buffer.from(await file.arrayBuffer());
       parsed = { accountHolder: null, accountNumber: null, transactions: parseQrisWorkbook(buffer) };
     } else {
+      /* User bisa memilih rekening tujuan sebelum upload (dropdown).
+         Kalau dipilih, override OCR agar nama holder konsisten. */
+      const forcedHolder = String(form.get("bankAccountHolder") || "").trim() || null;
+      const forcedNumber = String(form.get("bankAccountNumber") || "").trim().replace(/\D/g, "") || null;
+
       let accountHolder: string | null = null;
       let accountNumber: string | null = null;
       const transactions: NormalizedTransaction[] = [];
@@ -78,7 +83,15 @@ export async function POST(request: Request) {
         accountNumber ||= result.accountNumber;
         transactions.push(...result.transactions);
       }
-      parsed = { accountHolder, accountNumber, transactions };
+      parsed = {
+        accountHolder: forcedHolder || accountHolder,
+        accountNumber: forcedNumber || accountNumber,
+        transactions: transactions.map((tx) => ({
+          ...tx,
+          accountHolder: forcedHolder || tx.accountHolder,
+          accountNumber: forcedNumber || tx.accountNumber,
+        })),
+      };
     }
     if (!parsed.transactions.length) {
       throw new Error("Tidak ada transaksi yang berhasil dibaca dari file ini.");
