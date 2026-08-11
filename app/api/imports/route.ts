@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { parseHistoricalWorkbook, stageHistoricalWorkbook } from "@/lib/historical-import";
 import { stageImportTransactions, type NormalizedTransaction } from "@/lib/matching";
 import { parseBankFile } from "@/lib/mimo";
+import { parseBankXlsx } from "@/lib/bank-xlsx";
 import { parseQrisWorkbook } from "@/lib/qris";
 
 export const runtime = "nodejs";
@@ -15,7 +16,7 @@ export async function POST(request: Request) {
   const form = await request.formData();
   const files = form.getAll("file").filter((entry): entry is File => entry instanceof File);
   const kind = form.get("kind");
-  if (!files.length || (kind !== "QRIS" && kind !== "BANK" && kind !== "HISTORICAL")) {
+  if (!files.length || (kind !== "QRIS" && kind !== "BANK" && kind !== "HISTORICAL" && kind !== "BANK_XLSX")) {
     return NextResponse.json({ error: "File atau jenis impor tidak valid." }, { status: 400 });
   }
   if (kind !== "BANK" && files.length > 1) {
@@ -54,7 +55,7 @@ export async function POST(request: Request) {
   }
 
   const extension = file.name.split(".").pop()?.toLowerCase();
-  const source = kind === "QRIS" ? "QRIS_XLSX" : extension === "pdf" ? "BANK_PDF" : "BANK_SCREENSHOT";
+  const source = kind === "QRIS" ? "QRIS_XLSX" : kind === "BANK_XLSX" ? "BANK_SCREENSHOT" : extension === "pdf" ? "BANK_PDF" : "BANK_SCREENSHOT";
   const fileName = files.length > 1
     ? `${files.length} file · ${files.map((entry) => entry.name).slice(0, 2).join(", ")}${files.length > 2 ? `, +${files.length - 2} lainnya` : ""}`
     : file.name;
@@ -65,6 +66,12 @@ export async function POST(request: Request) {
     if (kind === "QRIS") {
       const buffer = Buffer.from(await file.arrayBuffer());
       parsed = { accountHolder: null, accountNumber: null, transactions: parseQrisWorkbook(buffer) };
+    } else if (kind === "BANK_XLSX") {
+      const forcedHolder = String(form.get("bankAccountHolder") || "").trim() || null;
+      const forcedNumber = String(form.get("bankAccountNumber") || "").trim().replace(/\D/g, "") || null;
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const transactions = parseBankXlsx(buffer, forcedHolder, forcedNumber);
+      parsed = { accountHolder: forcedHolder, accountNumber: forcedNumber, transactions };
     } else {
       /* User bisa memilih rekening tujuan sebelum upload (dropdown).
          Kalau dipilih, override OCR agar nama holder konsisten. */

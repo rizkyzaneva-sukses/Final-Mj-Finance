@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ArchiveRestore, FileSpreadsheet, ImagePlus, LoaderCircle, UploadCloud, X } from "lucide-react";
 
-type UploadKind = "QRIS" | "BANK" | "HISTORICAL";
+type UploadKind = "QRIS" | "BANK" | "BANK_XLSX" | "HISTORICAL";
 
 const BANK_ACCOUNTS = [
   { holder: "MUHAMMAD RIZKY MAULANA", number: "0770015477", label: "Muhammad Rizky" },
@@ -77,7 +77,7 @@ export function UploadPanel({ canImportHistorical = false }: { canImportHistoric
         data.set("qrisAccountHolder", qrisAccountHolder);
         data.set("qrisAccountNumber", qrisAccountNumber);
       }
-      if (kind === "BANK" && bankAccountIdx >= 0) {
+      if ((kind === "BANK" || kind === "BANK_XLSX") && bankAccountIdx >= 0) {
         data.set("bankAccountHolder", BANK_ACCOUNTS[bankAccountIdx].holder);
         data.set("bankAccountNumber", BANK_ACCOUNTS[bankAccountIdx].number);
       }
@@ -114,15 +114,16 @@ export function UploadPanel({ canImportHistorical = false }: { canImportHistoric
     addFiles(event.dataTransfer.files);
   }
 
-  const accept = kind === "QRIS" ? ".xlsx,.xls" : kind === "HISTORICAL" ? ".xlsx" : ".pdf,.jpg,.jpeg,.png,.webp";
-  const fileLabel = kind === "QRIS" ? "QRIS" : kind === "BANK" ? "mutasi BCA" : "Data Lama FINAL";
-  const fileFormat = kind === "BANK" ? "Format .pdf, .jpg, .png, atau .webp · bisa pilih beberapa sekaligus" : kind === "HISTORICAL" ? "Format .xlsx FINAL" : "Format .xlsx atau .xls";
+  const accept = kind === "QRIS" ? ".xlsx,.xls" : kind === "HISTORICAL" ? ".xlsx" : kind === "BANK_XLSX" ? ".xlsx,.xls" : ".pdf,.jpg,.jpeg,.png,.webp";
+  const fileLabel = kind === "QRIS" ? "QRIS" : kind === "BANK" ? "mutasi BCA" : kind === "BANK_XLSX" ? "mutasi Excel" : "Data Lama FINAL";
+  const fileFormat = kind === "BANK" ? "Format .pdf, .jpg, .png, atau .webp &middot; bisa pilih beberapa sekaligus" : kind === "BANK_XLSX" ? "Format .xlsx atau .xls &middot; kolom: Tanggal, Deskripsi, Nominal, Arah" : kind === "HISTORICAL" ? "Format .xlsx FINAL" : "Format .xlsx atau .xls";
   const totalSizeMb = files.reduce((sum, item) => sum + item.size, 0) / 1024 / 1024;
   return (
     <section className="upload-section">
       <div className="upload-tabs" role="tablist">
         <button className={kind === "QRIS" ? "selected" : ""} onClick={() => changeKind("QRIS")}><FileSpreadsheet /> <span><b>Data QRIS</b><small>Excel laporan transaksi</small></span></button>
         <button className={kind === "BANK" ? "selected" : ""} onClick={() => changeKind("BANK")}><ImagePlus /> <span><b>Mutasi BCA</b><small>PDF atau screenshot</small></span></button>
+        <button className={kind === "BANK_XLSX" ? "selected" : ""} onClick={() => changeKind("BANK_XLSX")}><FileSpreadsheet /> <span><b>Mutasi Excel</b><small>XLSX / XLS</small></span></button>
         {canImportHistorical && <button className={kind === "HISTORICAL" ? "selected" : ""} onClick={() => changeKind("HISTORICAL")}><ArchiveRestore /> <span><b>Data Lama FINAL</b><small>Mapping historis siap review</small></span></button>}
       </div>
       <div className="drop-zone" onDragOver={onDropZoneDragOver} onDrop={onDropZoneDrop}>
@@ -144,7 +145,7 @@ export function UploadPanel({ canImportHistorical = false }: { canImportHistoric
           <button type="button" className="icon-button" title="Hapus dari daftar" onClick={(event) => { event.stopPropagation(); removeFile(index); }}><X size={14} /></button>
         </li>)}
       </ul>}
-      {kind === "BANK" && <div className="historical-account-fields" style={{ marginTop: "0.75rem" }}>
+      {(kind === "BANK" || kind === "BANK_XLSX") && <div className="historical-account-fields" style={{ marginTop: "0.75rem" }}>
         <label>Rekening tujuan (wajib)
           <select value={bankAccountIdx} onChange={(e) => setBankAccountIdx(Number(e.target.value))}>
             <option value={-1}>— Pilih rekening —</option>
@@ -156,6 +157,7 @@ export function UploadPanel({ canImportHistorical = false }: { canImportHistoric
         <small style={{ opacity: 0.6 }}>Semua file yang diunggah akan ditugaskan ke rekening ini.</small>
       </div>}
       {kind === "BANK" && <div className="info-strip"><b>Catatan cerdas</b><span>Baris &ldquo;TRF BATCH MYBB - PEMBAYARAN&rdquo; otomatis dilewati agar QRIS tidak dihitung dua kali. Unggah beberapa screenshot mutasi rekening yang sama sekaligus &mdash; jangan campur rekening berbeda dalam satu kali unggah.</span></div>}
+      {kind === "BANK_XLSX" && <div className="info-strip"><b>Format Excel</b><span>Kolom: <b>Tanggal</b> &middot; <b>Deskripsi</b> &middot; <b>Nominal</b> &middot; <b>Arah</b> (IN/OUT). <a href="/api/template/mutasi-bank" target="_blank" style={{ textDecoration: "underline" }}>Download template</a></span></div>}
       {kind === "HISTORICAL" && <div className="historical-options">
         <div className="historical-copy"><b>Impor aman lewat preview</b><span>Mapping pada workbook FINAL diterapkan langsung. Baris yang belum lengkap tetap masuk ke “Perlu ditinjau”. Sheet APPS_Belum_Terhubung tidak ikut diimpor.</span></div>
         <div className="historical-account-fields">
@@ -165,7 +167,7 @@ export function UploadPanel({ canImportHistorical = false }: { canImportHistoric
         <label className="historical-replace"><input type="checkbox" checked={replaceExisting} onChange={(event) => setReplaceExisting(event.target.checked)} /><span><b>Bersihkan transaksi lama sebelum upload ini</b><small>Hanya transaksi dan riwayat impor yang dihapus. Kementerian, event, dan master tetap aman. Centang hanya pada file FINAL pertama.</small></span></label>
       </div>}
       {message && <div className={`notice notice-${message.type}`}>{message.text}</div>}
-      <button className="button button-primary upload-button" disabled={!files.length || loading || (kind === "BANK" && bankAccountIdx < 0)} onClick={upload}>{loading ? <><LoaderCircle className="spin" size={18} /> Sedang membaca{files.length > 1 ? ` ${files.length} file...` : "..."}</> : <><UploadCloud size={18} /> {kind === "HISTORICAL" ? "Upload ke preview" : "Impor dan cocokkan"}</>}</button>
+      <button className="button button-primary upload-button" disabled={!files.length || loading || ((kind === "BANK" || kind === "BANK_XLSX") && bankAccountIdx < 0)} onClick={upload}>{loading ? <><LoaderCircle className="spin" size={18} /> Sedang membaca{files.length > 1 ? ` ${files.length} file...` : "..."}</> : <><UploadCloud size={18} /> {kind === "HISTORICAL" ? "Upload ke preview" : "Impor dan cocokkan"}</>}</button>
     </section>
   );
 }
