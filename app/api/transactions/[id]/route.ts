@@ -21,6 +21,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (transaction.importBatchId) await recalculateBatchStats(transaction.importBatchId);
     return NextResponse.json({ ok: true });
   }
+  if (body.action === "setAccount") {
+    const accountHolder = typeof body.accountHolder === "string" ? body.accountHolder.trim() || null : null;
+    const accountNumber = typeof body.accountNumber === "string"
+      ? body.accountNumber.replace(/\D/g, "") || null
+      : null;
+    if (!accountHolder && !accountNumber) {
+      return NextResponse.json({ error: "Pilih rekening tujuan." }, { status: 400 });
+    }
+    await db.transaction.update({
+      where: { id },
+      data: { accountHolder, accountNumber },
+    });
+    return NextResponse.json({ ok: true });
+  }
   if (body.action !== "assign") return NextResponse.json({ error: "Aksi tidak valid." }, { status: 400 });
 
   if (transaction.direction === "IN") {

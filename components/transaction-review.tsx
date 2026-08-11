@@ -2,9 +2,10 @@
 
 import { useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, ChevronLeft, ChevronRight, LoaderCircle, Search, Trash2, Undo2, X, Layers, TriangleAlert } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Landmark, LoaderCircle, Search, Trash2, Undo2, X, Layers, TriangleAlert } from "lucide-react";
 import { dateId, rupiah } from "@/lib/format";
 import { TransactionAssignmentModal, type AssignmentTarget, type MasterTree } from "@/components/transaction-assignment-modal";
+import { AccountAssignmentModal, type AccountTarget } from "@/components/account-assignment-modal";
 
 type Row = { id: string; date: string; description: string; amount: number; direction: "IN" | "OUT"; source: string; status: string; ministry: string | null; event: string | null; incomeType: string | null; expenseType: string | null; skipReason: string | null; accountHolder: string | null; accountNumber: string | null };
 type Option = { value: string; label: string };
@@ -54,6 +55,7 @@ export function TransactionReview({
   const router = useRouter();
   const searchParams = useSearchParams();
   const [selected, setSelected] = useState<AssignmentTarget | null>(null);
+  const [accountTarget, setAccountTarget] = useState<AccountTarget | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [query, setQuery] = useState(filters.query);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -190,6 +192,11 @@ export function TransactionReview({
     });
   }
 
+  function openBulkAccount() {
+    if (!hasSelection) return;
+    setAccountTarget({ ids: Array.from(selectedIds) });
+  }
+
   async function bulkSkip() {
     if (!hasSelection) return;
     setBulkLoading(true);
@@ -249,6 +256,7 @@ export function TransactionReview({
       </div>
       <div className="bulk-actions">
         <button className="button button-primary" disabled={directionConflict || bulkLoading} onClick={openBulkAssign}><Layers size={16} /> Assign sekaligus</button>
+        <button className="button button-dark" disabled={bulkLoading} onClick={openBulkAccount}><Landmark size={16} /> Set rekening</button>
         <button className="button" disabled={bulkLoading} onClick={bulkSkip}>Lewati semua</button>
         <button className="button" onClick={() => setSelectedIds(new Set())}>Batal pilih</button>
       </div>
@@ -258,7 +266,17 @@ export function TransactionReview({
         {rows.map((row) => <tr key={row.id} className={selectedIds.has(row.id) ? "row-selected" : ""}>
           <td className="checkbox-cell"><input type="checkbox" checked={selectedIds.has(row.id)} onChange={() => toggleRow(row.id)} /></td>
           <td data-label="Tanggal & sumber"><strong>{dateId.format(new Date(row.date))}</strong><small>{row.source.replaceAll("_", " ")}</small>{duplicateIds?.has(row.id) && <span className="duplicate-badge" title="Transaksi ini memiliki pasangan dari sumber berbeda dengan nominal & tanggal yang sama"><TriangleAlert size={13} /> Duplikat</span>}</td>
-          <td data-label="Rekening"><strong>{row.accountHolder || "Belum terbaca"}</strong><small>{row.accountNumber || "Tanpa nomor rekening"}</small></td>
+          <td data-label="Rekening">
+            <button
+              type="button"
+              className="account-cell-btn"
+              title="Set rekening"
+              onClick={() => setAccountTarget({ ids: [row.id], currentHolder: row.accountHolder, currentNumber: row.accountNumber })}
+            >
+              <strong>{row.accountHolder || "Belum terbaca"}</strong>
+              <small>{row.accountNumber || "Tanpa nomor rekening"} · klik untuk set</small>
+            </button>
+          </td>
           <td className="description-cell" data-label="Deskripsi">{row.description}{row.skipReason && <small>{row.skipReason}</small>}</td>
           <td data-label="Arah"><span className={`direction-pill ${row.direction === "IN" ? "pill-in" : "pill-out"}`}>{row.direction === "IN" ? "Masuk" : "Keluar"}</span></td>
           <td className={row.direction === "IN" ? "money-in" : "money-out"} data-label="Nominal"><strong>{rupiah.format(row.amount)}</strong></td>
@@ -279,5 +297,12 @@ export function TransactionReview({
       </div>
     </section>
     {selected && <TransactionAssignmentModal target={selected} master={master} onClose={() => setSelected(null)} />}
+    {accountTarget && (
+      <AccountAssignmentModal
+        target={accountTarget}
+        onClose={() => setAccountTarget(null)}
+        onSuccess={() => setSelectedIds(new Set())}
+      />
+    )}
   </>;
 }

@@ -9,11 +9,13 @@ import {
 
 type BulkBody = {
   ids?: string[];
-  action?: "assign" | "skip" | "reopen" | "forceUnique";
+  action?: "assign" | "skip" | "reopen" | "forceUnique" | "setAccount";
   ministryId?: string;
   eventId?: string;
   incomeTypeId?: string;
   expenseTypeId?: string;
+  accountHolder?: string;
+  accountNumber?: string;
 };
 
 export async function POST(request: Request) {
@@ -84,6 +86,21 @@ export async function POST(request: Request) {
 
     await Promise.all(batchIds.map(recalculateBatchStats));
     return NextResponse.json({ ok: true, forcedUnique: exactIds.length, reopened: otherIds.length });
+  }
+
+  if (body.action === "setAccount") {
+    const accountHolder = typeof body.accountHolder === "string" ? body.accountHolder.trim() || null : null;
+    const accountNumber = typeof body.accountNumber === "string"
+      ? body.accountNumber.replace(/\D/g, "") || null
+      : null;
+    if (!accountHolder && !accountNumber) {
+      return NextResponse.json({ error: "Pilih rekening tujuan." }, { status: 400 });
+    }
+    await db.transaction.updateMany({
+      where: { id: { in: ids } },
+      data: { accountHolder, accountNumber },
+    });
+    return NextResponse.json({ ok: true });
   }
 
   if (body.action === "forceUnique") {
