@@ -4,7 +4,15 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { CalendarRange } from "lucide-react";
 
-export function MensosFilters({ start: initialStart, end: initialEnd }: { start: string; end: string }) {
+export function MensosFilters({
+  start: initialStart,
+  end: initialEnd,
+  basePath = "/mensos",
+}: {
+  start: string;
+  end: string;
+  basePath?: string;
+}) {
   const router = useRouter();
   const [start, setStart] = useState(initialStart);
   const [end, setEnd] = useState(initialEnd);
@@ -13,7 +21,7 @@ export function MensosFilters({ start: initialStart, end: initialEnd }: { start:
       className="report-filters"
       onSubmit={(event) => {
         event.preventDefault();
-        router.push(`/mensos?start=${start}&end=${end}`);
+        router.push(`${basePath}?start=${start}&end=${end}`);
       }}
     >
       <CalendarRange />

@@ -50,7 +50,9 @@ function renderTrend(current: number, previous: number) {
 
 export default async function DashboardPage({ searchParams }: { searchParams: SearchParams }) {
   const session = await getSession();
-  if (session?.role === "MENSOS") redirect("/mensos");
+  if (session?.role === "MENSOS" || session?.role === "MINISTRY") {
+    redirect(session.role === "MENSOS" || session.ministryCode === 4 ? "/mensos" : "/ministry");
+  }
   const params = await searchParams;
   const topExpensePeriod = periodBounds(params.start, params.end);
 

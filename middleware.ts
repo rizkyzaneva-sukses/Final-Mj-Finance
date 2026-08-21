@@ -9,7 +9,11 @@ function secret() {
   return new TextEncoder().encode(value);
 }
 
-const MENSOS_ALLOWED = ["/mensos"];
+const MINISTRY_ALLOWED = ["/ministry", "/mensos"];
+
+function isMinistryRole(role: unknown) {
+  return role === "MINISTRY" || role === "MENSOS";
+}
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -26,8 +30,9 @@ export async function middleware(request: NextRequest) {
 
   try {
     const { payload } = await jwtVerify(token, key);
-    if (payload.role === "MENSOS" && !MENSOS_ALLOWED.some((p) => pathname.startsWith(p))) {
-      return NextResponse.redirect(new URL("/mensos", request.url));
+    if (isMinistryRole(payload.role) && !MINISTRY_ALLOWED.some((p) => pathname.startsWith(p))) {
+      const home = payload.role === "MENSOS" || payload.ministryCode === 4 ? "/mensos" : "/ministry";
+      return NextResponse.redirect(new URL(home, request.url));
     }
   } catch {
     // Invalid token — let the panel layout handle it

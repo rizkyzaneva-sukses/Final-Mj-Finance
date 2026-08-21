@@ -5,5 +5,13 @@ import { getSession } from "@/lib/auth";
 export default async function PanelLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
   if (!session) redirect("/login");
-  return <AppShell role={session.role}>{children}</AppShell>;
+  return (
+    <AppShell
+      role={session.role}
+      ministryName={session.ministryName}
+      ministryCode={session.ministryCode}
+    >
+      {children}
+    </AppShell>
+  );
 }

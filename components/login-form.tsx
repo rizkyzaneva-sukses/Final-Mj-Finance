@@ -25,7 +25,7 @@ export function LoginForm() {
       setLoading(false);
       return;
     }
-    router.replace(payload.role === "MENSOS" ? "/mensos" : "/dashboard");
+    router.replace(payload.redirectTo || (payload.role === "MENSOS" ? "/mensos" : "/dashboard"));
     router.refresh();
   }
 

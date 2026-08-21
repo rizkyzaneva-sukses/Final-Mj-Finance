@@ -15,17 +15,21 @@ const links = [
   { href: "/master", label: "Master Data", icon: Building2, financeOnly: true },
 ];
 
-const mensosLinks = [
-  { href: "/mensos", label: "Ringkasan", icon: BarChart3 },
-];
+function ministryLinks(home: string) {
+  return [{ href: home, label: "Ringkasan", icon: BarChart3 }];
+}
 
-const roleLabels: Record<AppRole, string> = {
-  FINANCE: "Menteri Keuangan",
-  MINISTRY: "Kementerian",
-  MENSOS: "Kemensos 26 Sejahtera",
-};
-
-export function AppShell({ role, children }: { role: AppRole; children: React.ReactNode }) {
+export function AppShell({
+  role,
+  ministryName,
+  ministryCode,
+  children,
+}: {
+  role: AppRole;
+  ministryName?: string;
+  ministryCode?: number;
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -51,9 +55,17 @@ export function AppShell({ role, children }: { role: AppRole; children: React.Re
     router.refresh();
   }
 
-  const navLinks = role === "MENSOS"
-    ? mensosLinks
+  const isMinistry = role === "MINISTRY" || role === "MENSOS";
+  const home = role === "MENSOS" || ministryCode === 4 ? "/mensos" : "/ministry";
+  const navLinks = isMinistry
+    ? ministryLinks(home)
     : links.filter((item) => !item.financeOnly || role === "FINANCE");
+
+  const roleLabel = role === "FINANCE"
+    ? "Menteri Keuangan"
+    : role === "MENSOS"
+      ? (ministryName || "Kemensos 26 Sejahtera")
+      : (ministryName || "Kementerian");
 
   return (
     <div className="app-frame">
@@ -65,7 +77,7 @@ export function AppShell({ role, children }: { role: AppRole; children: React.Re
           <span className="brand-seal">MJ</span>
           <div><strong>MUDA JUARA</strong><small>FINANCE</small></div>
         </div>
-        <div className="role-chip">{roleLabels[role]}</div>
+        <div className="role-chip">{roleLabel}</div>
         <nav>
           {navLinks.map((item) => {
             const Icon = item.icon;

@@ -34,11 +34,17 @@ Alternatif cepat: sesuaikan environment pada `docker-compose.yml`, lalu jalankan
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE?schema=public
 SESSION_SECRET=random-minimal-32-karakter
 FINANCE_LOGIN_CODE=kode-menkeu-yang-disepakati
-MINISTRY_LOGIN_CODE=kode-kementerian-yang-disepakati
+MENSOS_LOGIN_CODE=kode-kementerian-sosial
+MINISTRY_1_LOGIN_CODE=kode-sdm
+MINISTRY_3_LOGIN_CODE=kode-pendidikan
+MINISTRY_5_LOGIN_CODE=kode-porpar
+# dst. MINISTRY_{kode}_LOGIN_CODE untuk setiap kementerian
 MIMO_BASE_URL=https://api.xiaomimimo.com/v1
 MIMO_API_KEY=sk-api-key-pay-as-you-go
 MIMO_MODEL=mimo-v2.5
 ```
+
+Setiap kementerian memakai `MINISTRY_{kode}_LOGIN_CODE` (contoh kode `1` = SDM). Kementerian Sosial juga menerima `MENSOS_LOGIN_CODE`. Setelah login, portal kementerian menampilkan ringkasan program milik mereka dan dapat mengunggah dokumentasi struk/bon (gambar/PDF) per kegiatan.
 
 Gunakan API key pay-as-you-go (`sk-`), bukan key Token Plan (`tp-`). Token Plan hanya ditujukan untuk alat coding dan tidak boleh digunakan oleh backend aplikasi. Saat container hidup, migration dan seed master data otomatis dijalankan. API key dan kode login tidak boleh dimasukkan ke repository.
 

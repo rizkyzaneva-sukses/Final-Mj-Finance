@@ -1,11 +1,13 @@
 import { redirect } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
-import { getSession } from "@/lib/auth";
+import { getSession, ministryHomePath } from "@/lib/auth";
 import { LoginForm } from "@/components/login-form";
 
 export default async function LoginPage() {
   const session = await getSession();
-  if (session) redirect(session.role === "MENSOS" ? "/mensos" : "/dashboard");
+  if (session) {
+    redirect(session.role === "FINANCE" ? "/dashboard" : ministryHomePath(session));
+  }
   return (
     <main className="login-page">
       <section className="login-story">

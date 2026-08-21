@@ -23,7 +23,16 @@ services:
       DATABASE_URL: postgresql://postgres:change-this-password@postgres:5432/mudajuara?schema=public
       SESSION_SECRET: replace-with-at-least-32-random-characters
       FINANCE_LOGIN_CODE: replace-finance-code
-      MINISTRY_LOGIN_CODE: replace-ministry-code
+      MENSOS_LOGIN_CODE: replace-mensos-code
+      MINISTRY_1_LOGIN_CODE: replace-sdm-code
+      MINISTRY_3_LOGIN_CODE: replace-pendidikan-code
+      MINISTRY_5_LOGIN_CODE: replace-porpar-code
+      MINISTRY_6_LOGIN_CODE: replace-luar-negeri-code
+      MINISTRY_7_LOGIN_CODE: replace-kominfo-code
+      MINISTRY_8_LOGIN_CODE: replace-muslimah-code
+      MINISTRY_9_LOGIN_CODE: replace-menkumham-code
+      MINISTRY_96_LOGIN_CODE: replace-yayasan-code
+      MINISTRY_98_LOGIN_CODE: replace-kabinet-25-code
       MIMO_BASE_URL: https://api.xiaomimimo.com/v1
       MIMO_API_KEY: replace-mimo-api-key
       MIMO_MODEL: mimo-v2.5
